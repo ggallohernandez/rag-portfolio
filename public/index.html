@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RAG Workspace</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0b131d;
+        --bg-2: #111c2a;
+        --panel: #121f30;
+        --panel-2: #0f1a29;
+        --line: rgba(183, 209, 235, 0.16);
+        --text: #ebf4ff;
+        --muted: #96afc8;
+        --primary: #68dbff;
+        --good: #43e49a;
+        --warn: #ffb367;
+        --radius: 14px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 20% 10%, rgba(104, 219, 255, 0.08), transparent 25%),
+          radial-gradient(circle at 84% 6%, rgba(67, 228, 154, 0.07), transparent 28%),
+          linear-gradient(150deg, var(--bg), #0f1927 42%, #0b131d);
+        color: var(--text);
+        font-family: "Instrument Sans", sans-serif;
+        min-height: 100vh;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 310px minmax(0, 1fr) 300px;
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        border-right: 1px solid var(--line);
+        background: rgba(12, 23, 36, 0.9);
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .side-section {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel-2);
+        overflow: hidden;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+
+      .list {
+        display: flex;
+        flex-direction: column;
+        max-height: 220px;
+        overflow: auto;
+      }
+
+      .item {
+        width: 100%;
+        border: 0;
+        background: transparent;
+        color: var(--text);
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(157, 186, 216, 0.1);
+        cursor: pointer;
+      }
+
+      .item:hover {
+        background: rgba(104, 219, 255, 0.09);
+      }
+
+      .item.active {
+        background: rgba(104, 219, 255, 0.17);
+        box-shadow: inset 2px 0 0 var(--primary);
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .main {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+      }
+
+      .main-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 22px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(12, 21, 34, 0.82);
+      }
+
+      .main-head h1 {
+        margin: 0;
+        font-size: 1.06rem;
+      }
+
+      .messages {
+        padding: 22px;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .msg {
+        max-width: 85%;
+        padding: 12px 14px;
+        border-radius: 14px;
+        line-height: 1.45;
+        border: 1px solid var(--line);
+      }
+
+      .msg.user {
+        margin-left: auto;
+        background: rgba(47, 150, 223, 0.2);
+      }
+
+      .msg.assistant {
+        background: rgba(18, 34, 52, 0.9);
+      }
+
+      .cite {
+        margin-top: 8px;
+        font-size: 0.78rem;
+        color: #b7d3ee;
+        border-top: 1px solid rgba(183, 209, 235, 0.18);
+        padding-top: 6px;
+      }
+
+      .composer {
+        padding: 14px 18px 18px;
+        border-top: 1px solid var(--line);
+        background: rgba(10, 19, 31, 0.9);
+      }
+
+      .composer-box {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--panel);
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        padding: 10px;
+      }
+
+      textarea,
+      input {
+        font-family: inherit;
+      }
+
+      textarea {
+        border: 0;
+        background: transparent;
+        color: var(--text);
+        resize: none;
+        min-height: 46px;
+        max-height: 180px;
+        outline: none;
+        font-size: 0.95rem;
+      }
+
+      button,
+      .btn {
+        border: 0;
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-weight: 600;
+        cursor: pointer;
+        background: linear-gradient(130deg, var(--primary), #4ceca8);
+        color: #05202e;
+      }
+
+      .btn.secondary {
+        background: #22364c;
+        color: #eaf2fb;
+      }
+
+      .right {
+        border-left: 1px solid var(--line);
+        padding: 16px;
+        background: rgba(11, 21, 33, 0.9);
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .pipeline {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+
+      .node {
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #132234;
+        font-size: 0.82rem;
+      }
+
+      .node.active {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 1px rgba(104, 219, 255, 0.25);
+      }
+
+      .node.done {
+        border-color: var(--good);
+      }
+
+      .node.failed {
+        border-color: var(--warn);
+      }
+
+      .upload-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        padding: 10px;
+      }
+
+      input[type="file"] {
+        width: 100%;
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
+      .tiny {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.74rem;
+      }
+
+      @media (max-width: 1080px) {
+        .app {
+          grid-template-columns: 280px 1fr;
+        }
+
+        .right {
+          display: none;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+          max-height: 46vh;
+          overflow: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="side-section">
+          <div class="section-head">
+            <span>Projects</span>
+            <button class="btn secondary tiny" id="newProjectBtn">New</button>
+          </div>
+          <div id="projectList" class="list"></div>
+        </div>
+
+        <div class="side-section">
+          <div class="section-head">
+            <span>Chats</span>
+            <button class="btn secondary tiny" id="newChatBtn">New</button>
+          </div>
+          <div id="chatList" class="list"></div>
+        </div>
+
+        <div class="side-section">
+          <div class="section-head">
+            <span>Documents</span>
+          </div>
+          <div class="upload-row">
+            <input id="fileInput" type="file" multiple />
+            <button class="tiny" id="uploadBtn">Upload</button>
+          </div>
+          <div id="docList" class="list"></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="main-head">
+          <div>
+            <h1 id="chatTitle">Select or create a project</h1>
+            <div class="muted tiny" id="chatMeta">Project-scoped memory and retrieval</div>
+          </div>
+          <button class="btn secondary tiny" id="refreshBtn">Refresh</button>
+        </header>
+
+        <section id="messages" class="messages">
+          <div class="muted">No messages yet.</div>
+        </section>
+
+        <footer class="composer">
+          <div class="composer-box">
+            <textarea id="composer" placeholder="Message this project knowledge base..."></textarea>
+            <button id="sendBtn">Send</button>
+          </div>
+        </footer>
+      </main>
+
+      <aside class="right">
+        <div class="side-section">
+          <div class="section-head"><span>Pipeline</span></div>
+          <div class="pipeline" id="pipeline"></div>
+        </div>
+        <div class="side-section">
+          <div class="section-head"><span>Run</span></div>
+          <div style="padding:10px" class="tiny muted" id="runInfo">No active run</div>
+        </div>
+      </aside>
+    </div>
+
+    <script>
+      const state = {
+        projects: [],
+        chats: [],
+        docs: [],
+        selectedProjectId: null,
+        selectedChatId: null,
+        activeRunId: null,
+        runSource: null,
+        pipeline: new Map(),
+        runEvents: new Map()
+      };
+
+      const ingestionPhases = [
+        "uploaded",
+        "parsed",
+        "ocr",
+        "normalized",
+        "chunked",
+        "embedded",
+        "indexed",
+        "completed"
+      ];
+
+      const queryPhases = [
+        "query_received",
+        "query_embedded",
+        "retrieved_vector",
+        "retrieved_bm25",
+        "reranked",
+        "context_built",
+        "answer_streaming",
+        "answered"
+      ];
+
+      const phases = [...ingestionPhases, ...queryPhases];
+
+      const els = {
+        projectList: document.getElementById("projectList"),
+        chatList: document.getElementById("chatList"),
+        docList: document.getElementById("docList"),
+        messages: document.getElementById("messages"),
+        chatTitle: document.getElementById("chatTitle"),
+        chatMeta: document.getElementById("chatMeta"),
+        composer: document.getElementById("composer"),
+        pipeline: document.getElementById("pipeline"),
+        runInfo: document.getElementById("runInfo"),
+        fileInput: document.getElementById("fileInput")
+      };
+
+      document.getElementById("newProjectBtn").addEventListener("click", createProject);
+      document.getElementById("newChatBtn").addEventListener("click", createChat);
+      document.getElementById("uploadBtn").addEventListener("click", uploadFiles);
+      document.getElementById("sendBtn").addEventListener("click", sendMessage);
+      document.getElementById("refreshBtn").addEventListener("click", refreshSelected);
+
+      init();
+
+      async function init() {
+        resetPipelineState();
+        renderPipeline();
+        await loadProjects();
+      }
+
+      async function api(path, init = {}) {
+        const res = await fetch(path, {
+          headers: {
+            "Content-Type": "application/json",
+            ...(init.headers || {})
+          },
+          ...init
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `Request failed (${res.status})`);
+        }
+
+        return res;
+      }
+
+      async function loadProjects() {
+        const res = await api("/api/projects");
+        const data = await res.json();
+        state.projects = data.projects || [];
+
+        if (!state.selectedProjectId && state.projects.length > 0) {
+          state.selectedProjectId = state.projects[0].id;
+        }
+
+        renderProjects();
+
+        if (state.selectedProjectId) {
+          await refreshSelected();
+        }
+      }
+
+      async function refreshSelected() {
+        if (!state.selectedProjectId) return;
+        await Promise.all([loadChats(), loadDocs()]);
+
+        if (!state.selectedChatId && state.chats.length > 0) {
+          state.selectedChatId = state.chats[0].id;
+        }
+
+        renderChats();
+
+        if (state.selectedChatId) {
+          await loadMessages();
+        } else {
+          renderMessages([]);
+        }
+      }
+
+      async function createProject() {
+        const name = prompt("Project name");
+        if (!name) return;
+
+        await api("/api/projects", {
+          method: "POST",
+          body: JSON.stringify({ name })
+        });
+
+        await loadProjects();
+      }
+
+      async function createChat() {
+        if (!state.selectedProjectId) {
+          alert("Select a project first.");
+          return;
+        }
+
+        const title = prompt("Chat title", "New chat");
+        if (!title) return;
+
+        const res = await api(`/api/projects/${state.selectedProjectId}/chats`, {
+          method: "POST",
+          body: JSON.stringify({ title })
+        });
+
+        const chat = await res.json();
+        state.selectedChatId = chat.id;
+        await refreshSelected();
+      }
+
+      async function loadChats() {
+        const res = await api(`/api/projects/${state.selectedProjectId}/chats`);
+        const data = await res.json();
+        state.chats = data.chats || [];
+      }
+
+      async function loadDocs() {
+        const res = await api(`/api/projects/${state.selectedProjectId}/documents`);
+        const data = await res.json();
+        state.docs = data.documents || [];
+        renderDocs();
+      }
+
+      async function uploadFiles() {
+        if (!state.selectedProjectId) {
+          alert("Select a project first.");
+          return;
+        }
+
+        const files = [...(els.fileInput.files || [])];
+        if (files.length === 0) {
+          alert("Select at least one file.");
+          return;
+        }
+
+        for (const file of files) {
+          const form = new FormData();
+          form.append("file", file);
+
+          const res = await fetch(`/api/projects/${state.selectedProjectId}/documents`, {
+            method: "POST",
+            body: form
+          });
+
+          if (!res.ok) {
+            const text = await res.text();
+            alert(`Upload failed: ${text}`);
+            continue;
+          }
+
+          const payload = await res.json();
+          if (payload?.ingestion_job?.run_id) {
+            trackRun(payload.ingestion_job.run_id);
+          }
+        }
+
+        els.fileInput.value = "";
+        await loadDocs();
+      }
+
+      async function loadMessages() {
+        const res = await api(`/api/projects/${state.selectedProjectId}/chats/${state.selectedChatId}/messages?limit=100`);
+        const data = await res.json();
+        renderMessages(data.messages || []);
+      }
+
+      async function sendMessage() {
+        if (!state.selectedProjectId || !state.selectedChatId) {
+          alert("Select project and chat first.");
+          return;
+        }
+
+        const content = els.composer.value.trim();
+        if (!content) return;
+
+        els.composer.value = "";
+
+        const liveAssistant = {
+          id: `live-${Date.now()}`,
+          role: "assistant",
+          content: "",
+          citations_json: []
+        };
+
+        const currentMessages = await getCurrentMessages();
+        renderMessages([...currentMessages, { role: "user", content }, liveAssistant]);
+
+        const response = await fetch(`/api/projects/${state.selectedProjectId}/chats/${state.selectedChatId}/messages`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "text/event-stream"
+          },
+          body: JSON.stringify({ content, stream: true })
+        });
+
+        if (!response.ok || !response.body) {
+          const text = await response.text();
+          alert(text || "Message failed");
+          await loadMessages();
+          return;
+        }
+
+        await consumeSse(response.body, {
+          run_ref: (data) => {
+            if (data.run_id) {
+              trackRun(data.run_id);
+            }
+          },
+          token: (data) => {
+            liveAssistant.content += data.token || "";
+            renderMessages([...currentMessages, { role: "user", content }, liveAssistant]);
+          },
+          citation: (data) => {
+            liveAssistant.citations_json.push(data);
+            renderMessages([...currentMessages, { role: "user", content }, liveAssistant]);
+          },
+          done: async () => {
+            await loadMessages();
+          }
+        });
+      }
+
+      async function consumeSse(stream, handlers) {
+        const reader = stream.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() || "";
+
+          for (const part of parts) {
+            const lines = part.split("\n");
+            const eventLine = lines.find((line) => line.startsWith("event:"));
+            const dataLine = lines.find((line) => line.startsWith("data:"));
+            if (!eventLine || !dataLine) continue;
+
+            const name = eventLine.slice(6).trim();
+            const payload = JSON.parse(dataLine.slice(5).trim());
+            const handler = handlers[name];
+            if (handler) handler(payload);
+          }
+        }
+      }
+
+      function trackRun(runId) {
+        state.activeRunId = runId;
+        els.runInfo.textContent = runId;
+
+        if (state.runSource) {
+          state.runSource.close();
+        }
+
+        resetPipelineState();
+        renderPipeline();
+
+        const url = `/api/projects/${state.selectedProjectId}/runs/${runId}/events`;
+        state.runSource = new EventSource(url);
+        state.runSource.addEventListener("run_event", (evt) => {
+          const e = JSON.parse(evt.data);
+          if (!phases.includes(e.phase)) return;
+          state.runEvents.set(e.seq, e);
+          projectPipelineState();
+          renderPipeline();
+        });
+      }
+
+      function resetPipelineState() {
+        state.runEvents.clear();
+        phases.forEach((phase) => state.pipeline.set(phase, "pending"));
+      }
+
+      function detectRunType(events) {
+        if (events.some((event) => queryPhases.includes(event.phase))) {
+          return "query";
+        }
+        if (events.some((event) => ingestionPhases.includes(event.phase))) {
+          return "ingestion";
+        }
+        return null;
+      }
+
+      function projectPipelineState() {
+        phases.forEach((phase) => state.pipeline.set(phase, "pending"));
+
+        const events = [...state.runEvents.values()].sort((a, b) => a.seq - b.seq);
+        if (!events.length) {
+          return;
+        }
+
+        const runType = detectRunType(events);
+        const activePhases = runType === "query" ? queryPhases : runType === "ingestion" ? ingestionPhases : phases;
+        const visible = new Set(activePhases);
+        const latest = events[events.length - 1];
+
+        for (const event of events) {
+          if (!visible.has(event.phase)) continue;
+          const isLatest = event.seq === latest.seq;
+          state.pipeline.set(event.phase, isLatest ? event.status : "completed");
+        }
+      }
+
+      function renderProjects() {
+        els.projectList.innerHTML = "";
+
+        for (const project of state.projects) {
+          const btn = document.createElement("button");
+          btn.className = `item ${state.selectedProjectId === project.id ? "active" : ""}`;
+          btn.textContent = project.name;
+          btn.onclick = async () => {
+            state.selectedProjectId = project.id;
+            state.selectedChatId = null;
+            await refreshSelected();
+            renderProjects();
+          };
+          els.projectList.appendChild(btn);
+        }
+      }
+
+      function renderChats() {
+        els.chatList.innerHTML = "";
+        const project = state.projects.find((p) => p.id === state.selectedProjectId);
+        els.chatTitle.textContent = project ? project.name : "Select a project";
+
+        for (const chat of state.chats) {
+          const btn = document.createElement("button");
+          btn.className = `item ${state.selectedChatId === chat.id ? "active" : ""}`;
+          btn.textContent = chat.title;
+          btn.onclick = async () => {
+            state.selectedChatId = chat.id;
+            renderChats();
+            await loadMessages();
+          };
+          els.chatList.appendChild(btn);
+        }
+      }
+
+      function renderDocs() {
+        els.docList.innerHTML = "";
+
+        for (const doc of state.docs) {
+          const node = document.createElement("div");
+          node.className = "item";
+          node.style.cursor = "default";
+          node.innerHTML = `<strong>${doc.filename}</strong><div class=\"tiny muted\">${doc.parse_status} • OCR ${doc.ocr_status}</div>`;
+          els.docList.appendChild(node);
+        }
+      }
+
+      async function getCurrentMessages() {
+        if (!state.selectedProjectId || !state.selectedChatId) return [];
+        const res = await api(`/api/projects/${state.selectedProjectId}/chats/${state.selectedChatId}/messages?limit=100`);
+        const data = await res.json();
+        return data.messages || [];
+      }
+
+      function renderMessages(messages) {
+        els.messages.innerHTML = "";
+
+        if (!messages.length) {
+          els.messages.innerHTML = '<div class="muted">No messages yet.</div>';
+          return;
+        }
+
+        for (const msg of messages) {
+          const node = document.createElement("div");
+          node.className = `msg ${msg.role === "user" ? "user" : "assistant"}`;
+          node.textContent = msg.content || "";
+
+          if (msg.role === "assistant" && Array.isArray(msg.citations_json) && msg.citations_json.length) {
+            const cite = document.createElement("div");
+            cite.className = "cite";
+            cite.textContent = msg.citations_json.map((c) => `${c.document_id}/${c.chunk_id}`).join(" • ");
+            node.appendChild(cite);
+          }
+
+          els.messages.appendChild(node);
+        }
+
+        els.messages.scrollTop = els.messages.scrollHeight;
+      }
+
+      function renderPipeline() {
+        els.pipeline.innerHTML = "";
+
+        for (const phase of phases) {
+          const status = state.pipeline.get(phase) || "pending";
+          const node = document.createElement("div");
+          node.className = "node";
+          if (status === "in_progress" || status === "started") node.classList.add("active");
+          if (status === "completed") node.classList.add("done");
+          if (status === "failed" || status === "cancelled") node.classList.add("failed");
+          node.textContent = `${phase}: ${status}`;
+          els.pipeline.appendChild(node);
+        }
+      }
+    </script>
+  </body>
+</html>

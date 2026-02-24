@@ -1,0 +1,41 @@
+{
+  "name": "rag-portfolio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/src/index.js",
+    "start:worker": "node dist/src/worker.js",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:chaos": "vitest run test/chaos.nightly.test.ts"
+  },
+  "dependencies": {
+    "bullmq": "^5.10.4",
+    "express": "^4.21.2",
+    "ioredis": "^5.4.1",
+    "minio": "^8.0.3",
+    "multer": "^1.4.5-lts.1",
+    "openai": "^4.83.0",
+    "pdf-parse": "^1.1.1",
+    "pg": "^8.13.1",
+    "uuid": "^11.1.0",
+    "xlsx": "^0.18.5",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.13.8",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/pg": "^8.11.10",
+    "@types/supertest": "^6.0.2",
+    "fast-check": "^3.23.2",
+    "supertest": "^7.1.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  }
+}
