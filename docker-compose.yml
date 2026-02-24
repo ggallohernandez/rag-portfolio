@@ -2,7 +2,7 @@ services:
   web:
     build: .
     ports:
-      - "3000:3000"
+      - 3000
     environment:
       - PORT=3000
       - RUN_MIGRATIONS=true
@@ -64,7 +64,7 @@ services:
       POSTGRES_USER: rag
       POSTGRES_PASSWORD: rag
     ports:
-      - "5432:5432"
+      - 5432
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -77,7 +77,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - 6379
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -92,8 +92,8 @@ services:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: miniopassword
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - 9000
+      - 9001
     volumes:
       - minio_data:/data
 
