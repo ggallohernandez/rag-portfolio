@@ -725,7 +725,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-workspace-gradient">
-      <div className="mx-auto flex h-screen w-full max-w-[1880px] flex-col gap-4 p-4 xl:flex-row">
+      <div className="mx-auto flex min-h-screen w-full max-w-[1880px] flex-col gap-4 p-4 xl:h-screen xl:flex-row">
         <Card className="flex w-full shrink-0 flex-col border-cyan-900/40 bg-slate-950/70 xl:w-[320px]">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
@@ -797,7 +797,7 @@ export default function HomePage() {
           </CardContent>
         </Card>
 
-        <Card className="flex min-h-0 flex-1 flex-col border-cyan-900/40 bg-slate-950/70">
+        <Card className="flex min-h-0 flex-col border-cyan-900/40 bg-slate-950/70 xl:flex-1">
           <CardHeader className="pb-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-1">
