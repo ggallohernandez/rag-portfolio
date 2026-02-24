@@ -1,7 +1,8 @@
-import express, { Request, Response } from "express";
+import express, { NextFunction, Request, Response } from "express";
 import multer from "multer";
 import path from "node:path";
 import { v4 as uuidv4 } from "uuid";
+import type { BotProtectionConfig } from "../config.js";
 import { defaultStartPhase } from "../domain/stateMachine.js";
 import { ChatRecord, DocumentRecord, MessageRecord, Project } from "../domain/ragTypes.js";
 import { RunType } from "../domain/types.js";
@@ -11,10 +12,13 @@ import { EventEmitterService } from "../services/eventEmitter.js";
 import { IngestionService } from "../services/ingestionService.js";
 import { Logger } from "../services/logger.js";
 import { MetricsRegistry } from "../services/metrics.js";
+import { InMemoryRateLimiter } from "../services/rateLimiter.js";
+import { verifyRecaptchaToken } from "../services/recaptcha.js";
 import { IRunStore, IRagStore } from "../store/interfaces.js";
 
 export type AppServices = {
   basePath?: string;
+  botProtection: BotProtectionConfig;
   store: IRunStore;
   ragStore: IRagStore;
   emitter: EventEmitterService;
@@ -25,16 +29,26 @@ export type AppServices = {
   evalService: EvalService;
 };
 
-const upload = multer({ storage: multer.memoryStorage() });
-
 export function createApp(services: AppServices) {
   const app = express();
   const basePath = normalizeBasePath(services.basePath ?? "/");
   const publicDir = path.resolve(process.cwd(), "public");
   const router = express.Router();
+  const botProtection = services.botProtection;
+  const rateLimiter = new InMemoryRateLimiter();
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: botProtection.uploadMaxBytes
+    }
+  });
+  const uploadSingle = upload.single("file");
 
   app.use(express.json({ limit: "25mb" }));
   app.use(basePath, express.static(publicDir));
+  if (botProtection.trustProxy) {
+    app.set("trust proxy", true);
+  }
 
   if (basePath !== "/") {
     app.get("/", (_request, response) => {
@@ -50,7 +64,100 @@ export function createApp(services: AppServices) {
     response.json({ ok: true });
   });
 
-  router.post("/api/projects", async (request, response) => {
+  type BotRateTarget = "projectCreates" | "chatCreates" | "messages" | "uploads" | "evalRuns";
+
+  const withBotGuard =
+    (target: BotRateTarget, captchaAction: string) =>
+    async (request: Request, response: Response, next: NextFunction): Promise<void> => {
+      try {
+        if (await enforceBotGuard(request, response, target, captchaAction)) {
+          next();
+        }
+      } catch (error) {
+        next(error as Error);
+      }
+    };
+
+  const withUploadSingle = (request: Request, response: Response, next: NextFunction): void => {
+    uploadSingle(request, response, (error?: unknown) => {
+      if (!error) {
+        next();
+        return;
+      }
+
+      if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+        response.status(413).json({
+          error: `file too large; max ${botProtection.uploadMaxBytes} bytes`
+        });
+        return;
+      }
+
+      next(error as Error);
+    });
+  };
+
+  async function enforceBotGuard(
+    request: Request,
+    response: Response,
+    target: BotRateTarget,
+    captchaAction: string
+  ): Promise<boolean> {
+    if (!botProtection.enabled) {
+      return true;
+    }
+
+    const clientIp = resolveClientIp(request, botProtection.trustProxy);
+    const decision = rateLimiter.decide(`${target}:${clientIp}`, {
+      windowMs: botProtection.rateLimits.windowMs,
+      maxRequests: botProtection.rateLimits[target]
+    });
+    response.setHeader("X-RateLimit-Remaining", `${decision.remaining}`);
+
+    if (!decision.allowed) {
+      response.setHeader("Retry-After", `${decision.retryAfterSeconds}`);
+      response.status(429).json({
+        error: "rate limit exceeded, slow down and retry later"
+      });
+      return false;
+    }
+
+    if (botProtection.recaptchaSecretKey.trim().length === 0) {
+      services.logger.error("bot protection enabled without recaptcha secret");
+      response.status(503).json({ error: "captcha is not configured on server" });
+      return false;
+    }
+
+    const captchaToken = request.header("x-captcha-token");
+    if (!captchaToken || captchaToken.trim().length === 0) {
+      response.status(403).json({ error: "captcha token is required" });
+      return false;
+    }
+    const normalizedCaptchaToken = captchaToken.trim();
+
+    const verification = await verifyRecaptchaToken({
+      token: normalizedCaptchaToken,
+      secretKey: botProtection.recaptchaSecretKey,
+      expectedAction: captchaAction,
+      minScore: botProtection.recaptchaMinScore,
+      remoteIp: clientIp !== "unknown" ? clientIp : undefined
+    });
+
+    if (!verification.ok) {
+      services.logger.info("captcha verification failed", {
+        ip: clientIp,
+        action: captchaAction,
+        reason: verification.reason
+      });
+      response.status(403).json({
+        error: "captcha verification failed"
+      });
+      return false;
+    }
+
+    return true;
+  }
+
+  router.post("/api/projects", withBotGuard("projectCreates", "project_create"), async (request, response) => {
     const projectId =
       typeof request.body?.project_id === "string" && request.body.project_id.length > 0
         ? request.body.project_id
@@ -78,7 +185,11 @@ export function createApp(services: AppServices) {
     response.json({ projects: await services.ragStore.listProjects() });
   });
 
-  router.post("/api/projects/:projectId/documents", upload.single("file"), async (request, response) => {
+  router.post(
+    "/api/projects/:projectId/documents",
+    withBotGuard("uploads", "document_upload"),
+    withUploadSingle,
+    async (request, response) => {
     try {
       const projectId = request.params.projectId;
       const project = await services.ragStore.getProject(projectId);
@@ -138,7 +249,8 @@ export function createApp(services: AppServices) {
     } catch (error) {
       response.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     }
-  });
+    }
+  );
 
   router.get("/api/projects/:projectId/documents", async (request, response) => {
     const projectId = request.params.projectId;
@@ -172,7 +284,7 @@ export function createApp(services: AppServices) {
     response.json({ jobs: await services.ragStore.listIngestionJobs(projectId) });
   });
 
-  router.post("/api/projects/:projectId/chats", async (request, response) => {
+  router.post("/api/projects/:projectId/chats", withBotGuard("chatCreates", "chat_create"), async (request, response) => {
     const projectId = request.params.projectId;
     if (!(await services.ragStore.getProject(projectId))) {
       response.status(404).json({ error: `project '${projectId}' not found` });
@@ -227,7 +339,10 @@ export function createApp(services: AppServices) {
     });
   });
 
-  router.post("/api/projects/:projectId/chats/:chatId/messages", async (request, response) => {
+  router.post(
+    "/api/projects/:projectId/chats/:chatId/messages",
+    withBotGuard("messages", "chat_message"),
+    async (request, response) => {
     const { projectId, chatId } = request.params;
     const content = typeof request.body?.content === "string" ? request.body.content.trim() : "";
     const wantsStream =
@@ -270,7 +385,8 @@ export function createApp(services: AppServices) {
     } catch (error) {
       response.status(400).json({ error: error instanceof Error ? error.message : String(error) });
     }
-  });
+    }
+  );
 
   router.get("/api/projects/:projectId/chats/:chatId/trace/:messageId", async (request, response) => {
     const { projectId, chatId, messageId } = request.params;
@@ -308,7 +424,7 @@ export function createApp(services: AppServices) {
     });
   });
 
-  router.post("/api/evals/run", async (request, response) => {
+  router.post("/api/evals/run", withBotGuard("evalRuns", "eval_run"), async (request, response) => {
     const projectId = typeof request.body?.project_id === "string" ? request.body.project_id : undefined;
 
     if (!projectId || !(await services.ragStore.getProject(projectId))) {
@@ -490,6 +606,23 @@ function normalizeBasePath(value: string): string {
   const withLeadingSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
   const withoutTrailingSlash = withLeadingSlash.replace(/\/+$/, "");
   return withoutTrailingSlash.length > 0 ? withoutTrailingSlash : "/";
+}
+
+function resolveClientIp(request: Request, trustProxy: boolean): string {
+  if (trustProxy) {
+    const forwarded = request.header("x-forwarded-for");
+    if (forwarded) {
+      const first = forwarded
+        .split(",")
+        .map((value) => value.trim())
+        .find((value) => value.length > 0);
+      if (first) {
+        return first;
+      }
+    }
+  }
+
+  return request.socket.remoteAddress ?? "unknown";
 }
 
 async function streamRunEvents(

@@ -35,6 +35,10 @@ const QUERY_PHASES = [
 
 const ALL_PHASES = [...INGESTION_PHASES, ...QUERY_PHASES];
 const BASE_PATH = normalizeBasePath(process.env.NEXT_PUBLIC_BASE_PATH || "/");
+const RECAPTCHA_SITE_KEY = (process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "").trim();
+const RECAPTCHA_SCRIPT_ID = "google-recaptcha-v3";
+
+let recaptchaScriptPromise = null;
 
 const PHASE_DETAILS = {
   uploaded: {
@@ -227,6 +231,56 @@ function withBasePath(path) {
   return `${BASE_PATH}${path}`;
 }
 
+function loadRecaptchaScript(siteKey) {
+  if (typeof window === "undefined") {
+    return Promise.resolve();
+  }
+
+  if (window.grecaptcha && typeof window.grecaptcha.execute === "function") {
+    return Promise.resolve();
+  }
+
+  if (recaptchaScriptPromise) {
+    return recaptchaScriptPromise;
+  }
+
+  recaptchaScriptPromise = new Promise((resolve, reject) => {
+    const existing = document.getElementById(RECAPTCHA_SCRIPT_ID);
+    if (existing) {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("Failed to load reCAPTCHA script")), { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = RECAPTCHA_SCRIPT_ID;
+    script.src = `https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(siteKey)}`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Failed to load reCAPTCHA script"));
+    document.head.appendChild(script);
+  });
+
+  return recaptchaScriptPromise;
+}
+
+async function getRecaptchaToken(action) {
+  if (!RECAPTCHA_SITE_KEY) {
+    return "";
+  }
+
+  await loadRecaptchaScript(RECAPTCHA_SITE_KEY);
+
+  const grecaptcha = window.grecaptcha;
+  if (!grecaptcha || typeof grecaptcha.ready !== "function" || typeof grecaptcha.execute !== "function") {
+    throw new Error("reCAPTCHA is unavailable");
+  }
+
+  await new Promise((resolve) => grecaptcha.ready(resolve));
+  return grecaptcha.execute(RECAPTCHA_SITE_KEY, { action });
+}
+
 export default function HomePage() {
   const [projects, setProjects] = useState([]);
   const [chats, setChats] = useState([]);
@@ -280,6 +334,15 @@ export default function HomePage() {
       throw new Error(text || `Request failed (${response.status})`);
     }
     return response.json();
+  }, []);
+
+  const getCaptchaHeaders = useCallback(async (action) => {
+    const token = await getRecaptchaToken(action);
+    if (!token) {
+      return {};
+    }
+
+    return { "X-Captcha-Token": token };
   }, []);
 
   const loadProjects = useCallback(async () => {
@@ -432,8 +495,10 @@ export default function HomePage() {
 
     setError("");
     try {
+      const captchaHeaders = await getCaptchaHeaders("project_create");
       const created = await requestJson(withBasePath("/api/projects"), {
         method: "POST",
+        headers: captchaHeaders,
         body: JSON.stringify({ name: name.trim() })
       });
       await loadProjects();
@@ -441,7 +506,7 @@ export default function HomePage() {
     } catch (createError) {
       setError(getErrorMessage(createError));
     }
-  }, [loadProjects, requestJson]);
+  }, [getCaptchaHeaders, loadProjects, requestJson]);
 
   const handleCreateChat = useCallback(async () => {
     if (!selectedProjectId) {
@@ -456,8 +521,10 @@ export default function HomePage() {
 
     setError("");
     try {
+      const captchaHeaders = await getCaptchaHeaders("chat_create");
       const created = await requestJson(withBasePath(`/api/projects/${selectedProjectId}/chats`), {
         method: "POST",
+        headers: captchaHeaders,
         body: JSON.stringify({ title: title.trim() })
       });
       setChats((previous) => [created, ...previous]);
@@ -466,7 +533,7 @@ export default function HomePage() {
     } catch (createError) {
       setError(getErrorMessage(createError));
     }
-  }, [loadMessagesForChat, requestJson, selectedProjectId]);
+  }, [getCaptchaHeaders, loadMessagesForChat, requestJson, selectedProjectId]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -510,8 +577,10 @@ export default function HomePage() {
         formData.append("file", file);
 
         try {
+          const captchaHeaders = await getCaptchaHeaders("document_upload");
           const response = await fetch(withBasePath(`/api/projects/${selectedProjectId}/documents`), {
             method: "POST",
+            headers: captchaHeaders,
             body: formData
           });
 
@@ -542,7 +611,7 @@ export default function HomePage() {
       }
       setIsUploading(false);
     },
-    [requestJson, selectedProjectId, trackRun]
+    [getCaptchaHeaders, requestJson, selectedProjectId, trackRun]
   );
 
   const sendMessage = useCallback(async () => {
@@ -568,11 +637,13 @@ export default function HomePage() {
     ]);
 
     try {
+      const captchaHeaders = await getCaptchaHeaders("chat_message");
       const response = await fetch(withBasePath(`/api/projects/${selectedProjectId}/chats/${selectedChatId}/messages`), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Accept: "text/event-stream"
+          Accept: "text/event-stream",
+          ...captchaHeaders
         },
         body: JSON.stringify({ content, stream: true })
       });
@@ -650,7 +721,7 @@ export default function HomePage() {
     } finally {
       setIsSending(false);
     }
-  }, [composer, isSending, loadMessagesForChat, selectedChatId, selectedProjectId, trackRun]);
+  }, [composer, getCaptchaHeaders, isSending, loadMessagesForChat, selectedChatId, selectedProjectId, trackRun]);
 
   return (
     <div className="min-h-screen bg-workspace-gradient">
@@ -798,13 +869,13 @@ export default function HomePage() {
           </CardContent>
         </Card>
 
-        <Card className="flex w-full shrink-0 flex-col border-cyan-900/40 bg-slate-950/70 xl:w-[360px]">
+        <Card className="flex min-h-0 w-full shrink-0 flex-col border-cyan-900/40 bg-slate-950/70 xl:w-[360px]">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm uppercase tracking-[0.2em] text-cyan-200/80">Pipeline</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-1 flex-col gap-4">
+          <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
             <TooltipProvider delayDuration={160}>
-              <div className="scroll-thin space-y-2 overflow-y-auto pr-1">
+              <div className="scroll-thin min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
                 {ALL_PHASES.map((phase) => {
                   const status = pipeline[phase] || "pending";
                   const detail = PHASE_DETAILS[phase] ?? {
@@ -844,9 +915,9 @@ export default function HomePage() {
               </div>
             </TooltipProvider>
 
-            <Separator />
+            <Separator className="shrink-0" />
 
-            <div className="space-y-2 rounded-md border border-border/70 bg-slate-900/55 p-3">
+            <div className="shrink-0 space-y-2 rounded-md border border-border/70 bg-slate-900/55 p-3">
               <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Run</p>
               <p className="break-all font-mono text-xs text-cyan-100">{activeRunId || "No active run"}</p>
             </div>

@@ -4,6 +4,7 @@ services:
       context: .
       args:
         BASE_PATH: ${BASE_PATH:-/}
+        NEXT_PUBLIC_RECAPTCHA_SITE_KEY: ${NEXT_PUBLIC_RECAPTCHA_SITE_KEY:-}
     ports:
       - 3000
     environment:
@@ -22,6 +23,18 @@ services:
       - OPENAI_CHAT_MODEL=gpt-4o-mini
       - OPENAI_EMBEDDING_MODEL=text-embedding-3-small
       - OPENAI_API_KEY=${OPENAI_API_KEY:?Set OPENAI_API_KEY in .env}
+      - BOT_PROTECTION_ENABLED=${BOT_PROTECTION_ENABLED:-false}
+      - BOT_TRUST_PROXY=${BOT_TRUST_PROXY:-true}
+      - BOT_UPLOAD_MAX_BYTES=${BOT_UPLOAD_MAX_BYTES:-20971520}
+      - BOT_RATE_LIMIT_WINDOW_MS=${BOT_RATE_LIMIT_WINDOW_MS:-60000}
+      - BOT_PROJECT_CREATES_PER_WINDOW=${BOT_PROJECT_CREATES_PER_WINDOW:-15}
+      - BOT_CHAT_CREATES_PER_WINDOW=${BOT_CHAT_CREATES_PER_WINDOW:-40}
+      - BOT_MESSAGES_PER_WINDOW=${BOT_MESSAGES_PER_WINDOW:-80}
+      - BOT_UPLOADS_PER_WINDOW=${BOT_UPLOADS_PER_WINDOW:-20}
+      - BOT_EVAL_RUNS_PER_WINDOW=${BOT_EVAL_RUNS_PER_WINDOW:-10}
+      - RECAPTCHA_SECRET_KEY=${RECAPTCHA_SECRET_KEY:-}
+      - RECAPTCHA_MIN_SCORE=${RECAPTCHA_MIN_SCORE:-0.5}
+      - NEXT_PUBLIC_RECAPTCHA_SITE_KEY=${NEXT_PUBLIC_RECAPTCHA_SITE_KEY:-}
     volumes:
       - ./data:/app/data
     depends_on:
@@ -37,6 +50,7 @@ services:
       context: .
       args:
         BASE_PATH: ${BASE_PATH:-/}
+        NEXT_PUBLIC_RECAPTCHA_SITE_KEY: ${NEXT_PUBLIC_RECAPTCHA_SITE_KEY:-}
     command: ["npm", "run", "start:worker"]
     environment:
       - PORT=3001
@@ -54,6 +68,8 @@ services:
       - OPENAI_CHAT_MODEL=gpt-4o-mini
       - OPENAI_EMBEDDING_MODEL=text-embedding-3-small
       - OPENAI_API_KEY=${OPENAI_API_KEY:?Set OPENAI_API_KEY in .env}
+      - BOT_PROTECTION_ENABLED=${BOT_PROTECTION_ENABLED:-false}
+      - BOT_UPLOAD_MAX_BYTES=${BOT_UPLOAD_MAX_BYTES:-20971520}
     volumes:
       - ./data:/app/data
     depends_on:

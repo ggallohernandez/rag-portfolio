@@ -21,6 +21,21 @@ Showcase RAG system with:
 - Set `BASE_PATH=/rag` to mount UI and API under `/rag` (for example: `/rag`, `/rag/api/...`, `/rag/health`).
 - Build-time assets and client fetch/EventSource URLs honor this value.
 
+## Bot Protection (Public Deployments)
+- Enable with `BOT_PROTECTION_ENABLED=true`.
+- Configure Google reCAPTCHA v3 keys:
+  - `RECAPTCHA_SECRET_KEY` (server verification secret)
+  - `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` (frontend site key)
+- Protected write/costly endpoints require both:
+  - passing IP rate-limit window checks
+  - valid `X-Captcha-Token` verification
+- Default protected endpoints:
+  - `POST /api/projects`
+  - `POST /api/projects/:projectId/chats`
+  - `POST /api/projects/:projectId/documents`
+  - `POST /api/projects/:projectId/chats/:chatId/messages`
+  - `POST /api/evals/run`
+
 ## Quick Start (Local Memory Mode)
 ```bash
 npm install

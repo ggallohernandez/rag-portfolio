@@ -14,7 +14,8 @@ async function main() {
     container.logger.info("server started", {
       port,
       adapter_mode: container.config.adapterMode,
-      base_path: container.config.basePath
+      base_path: container.config.basePath,
+      bot_protection_enabled: container.config.botProtection.enabled
     });
   });
 }
