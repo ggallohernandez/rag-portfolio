@@ -1,5 +1,9 @@
 FROM node:22-bullseye-slim
 
+ARG BASE_PATH=/
+ENV BASE_PATH=$BASE_PATH
+ENV NEXT_PUBLIC_BASE_PATH=$BASE_PATH
+
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci

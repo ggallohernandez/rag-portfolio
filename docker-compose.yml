@@ -1,10 +1,14 @@
 services:
   web:
-    build: .
+    build:
+      context: .
+      args:
+        BASE_PATH: ${BASE_PATH:-/}
     ports:
       - 3000
     environment:
       - PORT=3000
+      - BASE_PATH=${BASE_PATH:-/}
       - RUN_MIGRATIONS=true
       - ADAPTER_MODE=real
       - POSTGRES_URL=postgresql://rag:rag@postgres:5432/rag
@@ -29,10 +33,14 @@ services:
         condition: service_started
 
   worker:
-    build: .
+    build:
+      context: .
+      args:
+        BASE_PATH: ${BASE_PATH:-/}
     command: ["npm", "run", "start:worker"]
     environment:
       - PORT=3001
+      - BASE_PATH=${BASE_PATH:-/}
       - RUN_MIGRATIONS=false
       - ADAPTER_MODE=real
       - POSTGRES_URL=postgresql://rag:rag@postgres:5432/rag

@@ -34,6 +34,7 @@ const QUERY_PHASES = [
 ];
 
 const ALL_PHASES = [...INGESTION_PHASES, ...QUERY_PHASES];
+const BASE_PATH = normalizeBasePath(process.env.NEXT_PUBLIC_BASE_PATH || "/");
 
 const PHASE_DETAILS = {
   uploaded: {
@@ -203,6 +204,29 @@ function formatCitationLabel(citation, documentsById) {
   return `${filename}:${formatReference(citation.location)}`;
 }
 
+function normalizeBasePath(value) {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "/") {
+    return "/";
+  }
+
+  const withLeadingSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  const withoutTrailingSlash = withLeadingSlash.replace(/\/+$/, "");
+  return withoutTrailingSlash.length > 0 ? withoutTrailingSlash : "/";
+}
+
+function withBasePath(path) {
+  if (BASE_PATH === "/") {
+    return path;
+  }
+
+  if (!path.startsWith("/")) {
+    return `${BASE_PATH}/${path}`;
+  }
+
+  return `${BASE_PATH}${path}`;
+}
+
 export default function HomePage() {
   const [projects, setProjects] = useState([]);
   const [chats, setChats] = useState([]);
@@ -259,7 +283,7 @@ export default function HomePage() {
   }, []);
 
   const loadProjects = useCallback(async () => {
-    const data = await requestJson("/api/projects");
+    const data = await requestJson(withBasePath("/api/projects"));
     const nextProjects = data.projects || [];
     setProjects(nextProjects);
     setSelectedProjectId((previous) => {
@@ -276,7 +300,7 @@ export default function HomePage() {
         setMessages([]);
         return;
       }
-      const data = await requestJson(`/api/projects/${projectId}/chats/${chatId}/messages?limit=100`);
+      const data = await requestJson(withBasePath(`/api/projects/${projectId}/chats/${chatId}/messages?limit=100`));
       setMessages(data.messages || []);
     },
     [requestJson]
@@ -292,7 +316,7 @@ export default function HomePage() {
       setActiveRunId(runId);
       resetPipeline();
 
-      const source = new EventSource(`/api/projects/${projectId}/runs/${runId}/events`);
+      const source = new EventSource(withBasePath(`/api/projects/${projectId}/runs/${runId}/events`));
       source.addEventListener("run_event", (event) => {
         try {
           const payload = JSON.parse(event.data);
@@ -354,8 +378,8 @@ export default function HomePage() {
     void (async () => {
       try {
         const [chatData, docData] = await Promise.all([
-          requestJson(`/api/projects/${selectedProjectId}/chats`),
-          requestJson(`/api/projects/${selectedProjectId}/documents`)
+          requestJson(withBasePath(`/api/projects/${selectedProjectId}/chats`)),
+          requestJson(withBasePath(`/api/projects/${selectedProjectId}/documents`))
         ]);
 
         if (!active) {
@@ -408,7 +432,7 @@ export default function HomePage() {
 
     setError("");
     try {
-      const created = await requestJson("/api/projects", {
+      const created = await requestJson(withBasePath("/api/projects"), {
         method: "POST",
         body: JSON.stringify({ name: name.trim() })
       });
@@ -432,7 +456,7 @@ export default function HomePage() {
 
     setError("");
     try {
-      const created = await requestJson(`/api/projects/${selectedProjectId}/chats`, {
+      const created = await requestJson(withBasePath(`/api/projects/${selectedProjectId}/chats`), {
         method: "POST",
         body: JSON.stringify({ title: title.trim() })
       });
@@ -451,8 +475,8 @@ export default function HomePage() {
       await loadProjects();
       if (selectedProjectId) {
         const [chatData, docData] = await Promise.all([
-          requestJson(`/api/projects/${selectedProjectId}/chats`),
-          requestJson(`/api/projects/${selectedProjectId}/documents`)
+          requestJson(withBasePath(`/api/projects/${selectedProjectId}/chats`)),
+          requestJson(withBasePath(`/api/projects/${selectedProjectId}/documents`))
         ]);
         setChats(chatData.chats || []);
         setDocs(docData.documents || []);
@@ -486,7 +510,7 @@ export default function HomePage() {
         formData.append("file", file);
 
         try {
-          const response = await fetch(`/api/projects/${selectedProjectId}/documents`, {
+          const response = await fetch(withBasePath(`/api/projects/${selectedProjectId}/documents`), {
             method: "POST",
             body: formData
           });
@@ -507,7 +531,7 @@ export default function HomePage() {
       }
 
       try {
-        const data = await requestJson(`/api/projects/${selectedProjectId}/documents`);
+        const data = await requestJson(withBasePath(`/api/projects/${selectedProjectId}/documents`));
         setDocs(data.documents || []);
       } catch (refreshError) {
         failures.push(getErrorMessage(refreshError));
@@ -544,7 +568,7 @@ export default function HomePage() {
     ]);
 
     try {
-      const response = await fetch(`/api/projects/${selectedProjectId}/chats/${selectedChatId}/messages`, {
+      const response = await fetch(withBasePath(`/api/projects/${selectedProjectId}/chats/${selectedChatId}/messages`), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

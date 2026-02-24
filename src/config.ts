@@ -2,6 +2,7 @@ export type AdapterMode = "memory" | "real";
 
 export type AppConfig = {
   adapterMode: AdapterMode;
+  basePath: string;
   postgresUrl: string;
   redisUrl: string;
   minio: {
@@ -21,9 +22,11 @@ export type AppConfig = {
 
 export function loadConfig(): AppConfig {
   const adapterMode = normalizeMode(process.env.ADAPTER_MODE ?? process.env.APP_MODE ?? "memory");
+  const basePath = normalizeBasePath(process.env.BASE_PATH ?? "/");
 
   return {
     adapterMode,
+    basePath,
     postgresUrl: process.env.POSTGRES_URL ?? "postgresql://rag:rag@postgres:5432/rag",
     redisUrl: process.env.REDIS_URL ?? "redis://redis:6379",
     minio: {
@@ -44,4 +47,16 @@ export function loadConfig(): AppConfig {
 
 function normalizeMode(value: string): AdapterMode {
   return value.toLowerCase() === "real" ? "real" : "memory";
+}
+
+function normalizeBasePath(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "/") {
+    return "/";
+  }
+
+  const withLeadingSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  const withoutTrailingSlash = withLeadingSlash.replace(/\/+$/, "");
+
+  return withoutTrailingSlash.length === 0 ? "/" : withoutTrailingSlash;
 }

@@ -146,6 +146,7 @@ export async function buildContainer(now: () => number = () => Date.now()): Prom
   });
 
   const app = createApp({
+    basePath: config.basePath,
     store,
     ragStore,
     emitter,

@@ -16,6 +16,11 @@ Showcase RAG system with:
   - Postgres/pgvector + Redis/BullMQ + MinIO + OpenAI
   - requires `OPENAI_API_KEY`
 
+## Base Path
+- `BASE_PATH=/` by default.
+- Set `BASE_PATH=/rag` to mount UI and API under `/rag` (for example: `/rag`, `/rag/api/...`, `/rag/health`).
+- Build-time assets and client fetch/EventSource URLs honor this value.
+
 ## Quick Start (Local Memory Mode)
 ```bash
 npm install

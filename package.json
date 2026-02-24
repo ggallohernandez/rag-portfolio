@@ -9,7 +9,7 @@
     "start": "node dist/src/index.js",
     "start:worker": "node dist/src/worker.js",
     "build:server": "tsc -p tsconfig.json",
-    "build:ui": "rm -rf public .next out && mkdir -p public && next build && cp -R out/. public/",
+    "build:ui": "rm -rf public .next out && mkdir -p public && NEXT_PUBLIC_BASE_PATH=${BASE_PATH:-/} next build && cp -R out/. public/",
     "build": "npm run build:server && npm run build:ui",
     "test": "vitest run",
     "test:watch": "vitest",

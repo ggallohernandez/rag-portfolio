@@ -13,7 +13,8 @@ async function main() {
   container.app.listen(port, () => {
     container.logger.info("server started", {
       port,
-      adapter_mode: container.config.adapterMode
+      adapter_mode: container.config.adapterMode,
+      base_path: container.config.basePath
     });
   });
 }

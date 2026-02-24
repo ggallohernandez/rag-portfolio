@@ -14,6 +14,7 @@ import { MetricsRegistry } from "../services/metrics.js";
 import { IRunStore, IRagStore } from "../store/interfaces.js";
 
 export type AppServices = {
+  basePath?: string;
   store: IRunStore;
   ragStore: IRagStore;
   emitter: EventEmitterService;
@@ -28,14 +29,28 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 export function createApp(services: AppServices) {
   const app = express();
+  const basePath = normalizeBasePath(services.basePath ?? "/");
+  const publicDir = path.resolve(process.cwd(), "public");
+  const router = express.Router();
+
   app.use(express.json({ limit: "25mb" }));
-  app.use(express.static(path.resolve(process.cwd(), "public")));
+  app.use(basePath, express.static(publicDir));
+
+  if (basePath !== "/") {
+    app.get("/", (_request, response) => {
+      response.redirect(basePath);
+    });
+  }
 
   app.get("/health", (_request, response) => {
     response.json({ ok: true });
   });
 
-  app.post("/api/projects", async (request, response) => {
+  router.get("/health", (_request, response) => {
+    response.json({ ok: true });
+  });
+
+  router.post("/api/projects", async (request, response) => {
     const projectId =
       typeof request.body?.project_id === "string" && request.body.project_id.length > 0
         ? request.body.project_id
@@ -59,11 +74,11 @@ export function createApp(services: AppServices) {
     response.status(201).json({ ...project, project_id: project.id });
   });
 
-  app.get("/api/projects", async (_request, response) => {
+  router.get("/api/projects", async (_request, response) => {
     response.json({ projects: await services.ragStore.listProjects() });
   });
 
-  app.post("/api/projects/:projectId/documents", upload.single("file"), async (request, response) => {
+  router.post("/api/projects/:projectId/documents", upload.single("file"), async (request, response) => {
     try {
       const projectId = request.params.projectId;
       const project = await services.ragStore.getProject(projectId);
@@ -125,7 +140,7 @@ export function createApp(services: AppServices) {
     }
   });
 
-  app.get("/api/projects/:projectId/documents", async (request, response) => {
+  router.get("/api/projects/:projectId/documents", async (request, response) => {
     const projectId = request.params.projectId;
     if (!(await services.ragStore.getProject(projectId))) {
       response.status(404).json({ error: `project '${projectId}' not found` });
@@ -135,7 +150,7 @@ export function createApp(services: AppServices) {
     response.json({ documents: await services.ragStore.listProjectDocuments(projectId) });
   });
 
-  app.get("/api/projects/:projectId/jobs/:jobId/events", async (request, response) => {
+  router.get("/api/projects/:projectId/jobs/:jobId/events", async (request, response) => {
     const { projectId, jobId } = request.params;
     const job = await services.ragStore.getIngestionJob(jobId);
 
@@ -147,7 +162,7 @@ export function createApp(services: AppServices) {
     await streamRunEvents(services, projectId, job.run_id, request, response);
   });
 
-  app.get("/api/projects/:projectId/jobs", async (request, response) => {
+  router.get("/api/projects/:projectId/jobs", async (request, response) => {
     const projectId = request.params.projectId;
     if (!(await services.ragStore.getProject(projectId))) {
       response.status(404).json({ error: `project '${projectId}' not found` });
@@ -157,7 +172,7 @@ export function createApp(services: AppServices) {
     response.json({ jobs: await services.ragStore.listIngestionJobs(projectId) });
   });
 
-  app.post("/api/projects/:projectId/chats", async (request, response) => {
+  router.post("/api/projects/:projectId/chats", async (request, response) => {
     const projectId = request.params.projectId;
     if (!(await services.ragStore.getProject(projectId))) {
       response.status(404).json({ error: `project '${projectId}' not found` });
@@ -179,7 +194,7 @@ export function createApp(services: AppServices) {
     response.status(201).json(chat);
   });
 
-  app.get("/api/projects/:projectId/chats", async (request, response) => {
+  router.get("/api/projects/:projectId/chats", async (request, response) => {
     const projectId = request.params.projectId;
     if (!(await services.ragStore.getProject(projectId))) {
       response.status(404).json({ error: `project '${projectId}' not found` });
@@ -189,7 +204,7 @@ export function createApp(services: AppServices) {
     response.json({ chats: await services.ragStore.listProjectChats(projectId) });
   });
 
-  app.get("/api/projects/:projectId/chats/:chatId/messages", async (request, response) => {
+  router.get("/api/projects/:projectId/chats/:chatId/messages", async (request, response) => {
     const { projectId, chatId } = request.params;
     const chat = await services.ragStore.getChat(chatId);
     if (!chat || chat.project_id !== projectId) {
@@ -212,7 +227,7 @@ export function createApp(services: AppServices) {
     });
   });
 
-  app.post("/api/projects/:projectId/chats/:chatId/messages", async (request, response) => {
+  router.post("/api/projects/:projectId/chats/:chatId/messages", async (request, response) => {
     const { projectId, chatId } = request.params;
     const content = typeof request.body?.content === "string" ? request.body.content.trim() : "";
     const wantsStream =
@@ -257,7 +272,7 @@ export function createApp(services: AppServices) {
     }
   });
 
-  app.get("/api/projects/:projectId/chats/:chatId/trace/:messageId", async (request, response) => {
+  router.get("/api/projects/:projectId/chats/:chatId/trace/:messageId", async (request, response) => {
     const { projectId, chatId, messageId } = request.params;
     const chat = await services.ragStore.getChat(chatId);
 
@@ -286,14 +301,14 @@ export function createApp(services: AppServices) {
     response.json(trace);
   });
 
-  app.get("/api/evals", async (_request, response) => {
+  router.get("/api/evals", async (_request, response) => {
     response.json({
       eval_sets: await services.ragStore.listEvalSets(),
       eval_runs: await services.ragStore.listEvalRuns()
     });
   });
 
-  app.post("/api/evals/run", async (request, response) => {
+  router.post("/api/evals/run", async (request, response) => {
     const projectId = typeof request.body?.project_id === "string" ? request.body.project_id : undefined;
 
     if (!projectId || !(await services.ragStore.getProject(projectId))) {
@@ -306,7 +321,7 @@ export function createApp(services: AppServices) {
   });
 
   // Async guard-rail run endpoints.
-  app.post("/api/projects/:projectId/runs", async (request, response) => {
+  router.post("/api/projects/:projectId/runs", async (request, response) => {
     const projectId = request.params.projectId;
     const runType = request.body?.run_type as RunType | undefined;
 
@@ -359,7 +374,7 @@ export function createApp(services: AppServices) {
     response.status(201).json({ run_id: runId, state });
   });
 
-  app.post("/api/projects/:projectId/runs/:runId/events", async (request, response) => {
+  router.post("/api/projects/:projectId/runs/:runId/events", async (request, response) => {
     const projectId = request.params.projectId;
     const runId = request.params.runId;
 
@@ -405,7 +420,7 @@ export function createApp(services: AppServices) {
     }
   });
 
-  app.get("/api/projects/:projectId/runs/:runId", async (request, response) => {
+  router.get("/api/projects/:projectId/runs/:runId", async (request, response) => {
     const { projectId, runId } = request.params;
     const state = await services.store.getRunState(projectId, runId);
     if (!state) {
@@ -416,7 +431,7 @@ export function createApp(services: AppServices) {
     response.json(state);
   });
 
-  app.get("/api/projects/:projectId/runs/:runId/trace", async (request, response) => {
+  router.get("/api/projects/:projectId/runs/:runId/trace", async (request, response) => {
     const { projectId, runId } = request.params;
     const trace = await services.store.getRunTrace(projectId, runId);
     if (!trace) {
@@ -427,7 +442,7 @@ export function createApp(services: AppServices) {
     response.json(trace);
   });
 
-  app.post("/api/projects/:projectId/runs/:runId/heartbeat", async (request, response) => {
+  router.post("/api/projects/:projectId/runs/:runId/heartbeat", async (request, response) => {
     const { projectId, runId } = request.params;
     const state = await services.store.getRunState(projectId, runId);
     if (!state) {
@@ -443,18 +458,20 @@ export function createApp(services: AppServices) {
     response.status(202).json({ run_id: runId, heartbeat: value });
   });
 
-  app.get("/api/projects/:projectId/runs/:runId/events", async (request, response) => {
+  router.get("/api/projects/:projectId/runs/:runId/events", async (request, response) => {
     const { projectId, runId } = request.params;
     await streamRunEvents(services, projectId, runId, request, response);
   });
 
-  app.get("/api/metrics", (_request, response) => {
+  router.get("/api/metrics", (_request, response) => {
     response.json(services.metrics.snapshot());
   });
 
-  app.get("/api/dead-letter-jobs", async (_request, response) => {
+  router.get("/api/dead-letter-jobs", async (_request, response) => {
     response.json({ jobs: await services.store.listDeadLetterJobs() });
   });
+
+  app.use(basePath, router);
 
   app.use((error: Error, _request: Request, response: Response, _next: () => void) => {
     services.logger.error("unhandled error", { error: error.message });
@@ -462,6 +479,17 @@ export function createApp(services: AppServices) {
   });
 
   return app;
+}
+
+function normalizeBasePath(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "/") {
+    return "/";
+  }
+
+  const withLeadingSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  const withoutTrailingSlash = withLeadingSlash.replace(/\/+$/, "");
+  return withoutTrailingSlash.length > 0 ? withoutTrailingSlash : "/";
 }
 
 async function streamRunEvents(
