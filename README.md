@@ -6,7 +6,7 @@ Showcase RAG system with:
 - document ingestion (`PDF`, `MD`, `TXT`, `CSV`, `XLSX`)
 - chunking + embeddings + hybrid retrieval + citations
 - async guard rails with append-only run events and SSE replay
-- ChatGPT-style workspace UI (projects/chats/docs + live pipeline timeline)
+- ChatGPT-style Next.js + shadcn workspace UI (projects/chats/docs + live pipeline timeline)
 
 ## Runtime Modes
 - `ADAPTER_MODE=memory`
@@ -40,7 +40,7 @@ docker compose up -d --build
 `http://localhost:3000`
 
 Services:
-- `web` (Express app + UI)
+- `web` (Express API + exported Next.js/shadcn UI)
 - `worker` (BullMQ ingestion worker)
 - `postgres` (`pgvector/pg16`)
 - `redis`

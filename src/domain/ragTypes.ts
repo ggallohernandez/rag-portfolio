@@ -93,6 +93,8 @@ export type RetrievalCandidate = {
   document_id: string;
   score: number;
   content: string;
+  chunk_index?: number;
+  source?: string;
 };
 
 export type RetrievalTrace = {

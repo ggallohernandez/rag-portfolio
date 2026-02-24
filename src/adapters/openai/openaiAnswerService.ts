@@ -39,7 +39,7 @@ export class OpenAIAnswerService {
       document_id: candidate.document_id,
       chunk_id: candidate.chunk_id,
       preview: candidate.content.slice(0, 180),
-      location: "chunk"
+      location: buildCitationLocation(candidate)
     }));
 
     const usage = completion.usage;
@@ -53,4 +53,16 @@ export class OpenAIAnswerService {
       }
     };
   }
+}
+
+function buildCitationLocation(candidate: RetrievalCandidate): string {
+  if (candidate.source && candidate.source.trim().length > 0) {
+    return candidate.source;
+  }
+
+  if (typeof candidate.chunk_index === "number") {
+    return `chunk-${candidate.chunk_index + 1}`;
+  }
+
+  return "chunk";
 }

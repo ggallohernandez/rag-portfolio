@@ -16,7 +16,7 @@ export class PostgresRetrievalService {
     const vectorLiteral = `[${queryEmbedding.join(",")}]`;
 
     const vectorRows = await this.db.query<RetrievalCandidate>(
-      `select id as chunk_id, document_id, content,
+      `select id as chunk_id, document_id, chunk_index, (metadata_json->>'source') as source, content,
               (1 - (embedding <=> $1::vector))::float as score
        from chunks
        where project_id = $2
@@ -30,6 +30,8 @@ export class PostgresRetrievalService {
       `with q as (select plainto_tsquery('english', $1) as query)
        select c.id as chunk_id,
               c.document_id,
+              c.chunk_index,
+              (c.metadata_json->>'source') as source,
               c.content,
               ts_rank(c.tsvector_col, q.query)::float as score
        from chunks c, q

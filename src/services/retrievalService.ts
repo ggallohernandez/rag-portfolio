@@ -42,6 +42,8 @@ function scoreVector(chunks: ChunkRecord[], queryVector: number[]): RetrievalCan
     .map((chunk) => ({
       chunk_id: chunk.id,
       document_id: chunk.document_id,
+      chunk_index: chunk.chunk_index,
+      source: sourceFromMetadata(chunk.metadata_json),
       content: chunk.content,
       score: cosineSimilarity(queryVector, chunk.embedding)
     }))
@@ -72,11 +74,18 @@ function scoreBm25(chunks: ChunkRecord[], query: string): RetrievalCandidate[] {
       return {
         chunk_id: chunk.id,
         document_id: chunk.document_id,
+        chunk_index: chunk.chunk_index,
+        source: sourceFromMetadata(chunk.metadata_json),
         content: chunk.content,
         score
       };
     })
     .sort((a, b) => b.score - a.score);
+}
+
+function sourceFromMetadata(metadata: Record<string, unknown>): string | undefined {
+  const source = metadata.source;
+  return typeof source === "string" && source.trim().length > 0 ? source : undefined;
 }
 
 function termFrequency(tokens: string[]): Map<string, number> {
