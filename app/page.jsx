@@ -963,7 +963,7 @@ export default function HomePage() {
 
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm uppercase tracking-[0.2em] text-cyan-200/80">Chats</CardTitle>
-              <Button size="sm" variant="secondary" onClick={handleCreateChat}>
+              <Button size="sm" variant="secondary" disabled={!selectedProjectId} onClick={handleCreateChat}>
                 <Plus className="h-4 w-4" />
                 New
               </Button>
@@ -1048,54 +1048,84 @@ export default function HomePage() {
             ) : null}
           </CardHeader>
           <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
-            <div className="scroll-thin flex-1 space-y-4 overflow-y-auto rounded-xl border border-border/60 bg-slate-950/55 p-4">
-              {messages.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Start a conversation in this project chat.</p>
-              ) : (
-                messages.map((message) => {
-                  const isUser = message.role === "user";
-                  return (
-                    <article
-                      key={message.id}
-                      className={cn(
-                        "max-w-[90%] rounded-2xl border px-4 py-3 text-sm leading-relaxed shadow-sm animate-in fade-in slide-in-from-bottom-2",
-                        isUser
-                          ? "ml-auto border-cyan-400/50 bg-cyan-500/15 text-cyan-50"
-                          : "mr-auto border-slate-700/90 bg-slate-900/90 text-slate-100"
-                      )}
-                    >
-                      <p className="whitespace-pre-wrap">{message.content || ""}</p>
-                      {!isUser && Array.isArray(message.citations_json) && message.citations_json.length > 0 ? (
-                        <p className="mt-3 border-t border-slate-700/80 pt-2 font-mono text-[11px] text-cyan-200/80">
-                          {message.citations_json.map((citation) => formatCitationLabel(citation, documentsById)).join(" • ")}
-                        </p>
-                      ) : null}
-                    </article>
-                  );
-                })
-              )}
-            </div>
-
-            <div className="rounded-xl border border-border/70 bg-slate-950/70 p-3">
-              <Textarea
-                rows={3}
-                placeholder="Message this project knowledge base..."
-                value={composer}
-                onChange={(event) => setComposer(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    void sendMessage();
-                  }
-                }}
-              />
-              <div className="mt-3 flex items-center justify-end">
-                <Button onClick={sendMessage} disabled={isSending || !selectedProjectId || !selectedChatId || composer.trim().length === 0}>
-                  {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
-                  Send
-                </Button>
+            {!selectedProject ? (
+              <div className="flex min-h-0 flex-1 items-center justify-center rounded-xl border border-border/60 bg-slate-950/55 p-6">
+                <div className="max-w-md space-y-3 text-center">
+                  <p className="text-lg font-semibold text-cyan-100">Create a project to start</p>
+                  <p className="text-sm text-muted-foreground">
+                    Projects isolate documents, vectors, and chats. Start by creating your first project workspace.
+                  </p>
+                  <Button size="sm" variant="secondary" onClick={handleCreateProject}>
+                    <Plus className="h-4 w-4" />
+                    New Project
+                  </Button>
+                </div>
               </div>
-            </div>
+            ) : !selectedChatId ? (
+              <div className="flex min-h-0 flex-1 items-center justify-center rounded-xl border border-border/60 bg-slate-950/55 p-6">
+                <div className="max-w-md space-y-3 text-center">
+                  <p className="text-lg font-semibold text-cyan-100">Create a chat to continue</p>
+                  <p className="text-sm text-muted-foreground">
+                    Chats keep context windows independent inside this project. Open a chat to start asking questions.
+                  </p>
+                  <Button size="sm" variant="secondary" onClick={handleCreateChat}>
+                    <Plus className="h-4 w-4" />
+                    New Chat
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="scroll-thin flex-1 space-y-4 overflow-y-auto rounded-xl border border-border/60 bg-slate-950/55 p-4">
+                  {messages.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Start a conversation in this project chat.</p>
+                  ) : (
+                    messages.map((message) => {
+                      const isUser = message.role === "user";
+                      return (
+                        <article
+                          key={message.id}
+                          className={cn(
+                            "max-w-[90%] rounded-2xl border px-4 py-3 text-sm leading-relaxed shadow-sm animate-in fade-in slide-in-from-bottom-2",
+                            isUser
+                              ? "ml-auto border-cyan-400/50 bg-cyan-500/15 text-cyan-50"
+                              : "mr-auto border-slate-700/90 bg-slate-900/90 text-slate-100"
+                          )}
+                        >
+                          <p className="whitespace-pre-wrap">{message.content || ""}</p>
+                          {!isUser && Array.isArray(message.citations_json) && message.citations_json.length > 0 ? (
+                            <p className="mt-3 border-t border-slate-700/80 pt-2 font-mono text-[11px] text-cyan-200/80">
+                              {message.citations_json.map((citation) => formatCitationLabel(citation, documentsById)).join(" • ")}
+                            </p>
+                          ) : null}
+                        </article>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-border/70 bg-slate-950/70 p-3">
+                  <Textarea
+                    rows={3}
+                    placeholder="Message this project knowledge base..."
+                    value={composer}
+                    onChange={(event) => setComposer(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        void sendMessage();
+                      }
+                    }}
+                  />
+                  <div className="mt-3 flex items-center justify-end">
+                    <Button onClick={sendMessage} disabled={isSending || !selectedProjectId || !selectedChatId || composer.trim().length === 0}>
+                      {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
+                      Send
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
