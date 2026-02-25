@@ -477,6 +477,10 @@ export default function HomePage() {
     closeRunStream();
     setActiveRunId(null);
     resetPipeline();
+    setChats([]);
+    setDocs([]);
+    setSelectedChatId(null);
+    setMessages([]);
 
     void (async () => {
       try {
@@ -492,12 +496,7 @@ export default function HomePage() {
         const nextChats = chatData.chats || [];
         setChats(nextChats);
         setDocs(docData.documents || []);
-        setSelectedChatId((previous) => {
-          if (previous && nextChats.some((chat) => chat.id === previous)) {
-            return previous;
-          }
-          return nextChats[0]?.id ?? null;
-        });
+        setSelectedChatId(nextChats[0]?.id ?? null);
       } catch (loadError) {
         if (active) {
           setError(getErrorMessage(loadError));
@@ -511,6 +510,12 @@ export default function HomePage() {
   }, [selectedProjectId, closeRunStream, requestJson, resetPipeline]);
 
   useEffect(() => {
+    const selectedChat = chats.find((chat) => chat.id === selectedChatId && chat.project_id === selectedProjectId);
+    if (!selectedProjectId || !selectedChatId || !selectedChat) {
+      setMessages([]);
+      return;
+    }
+
     let active = true;
     void (async () => {
       try {
@@ -525,7 +530,7 @@ export default function HomePage() {
     return () => {
       active = false;
     };
-  }, [selectedProjectId, selectedChatId, loadMessagesForChat]);
+  }, [chats, selectedProjectId, selectedChatId, loadMessagesForChat]);
 
   const handleCreateProject = useCallback(async () => {
     const name = window.prompt("Project name");
