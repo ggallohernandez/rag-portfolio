@@ -37,6 +37,8 @@ const ALL_PHASES = [...INGESTION_PHASES, ...QUERY_PHASES];
 const BASE_PATH = normalizeBasePath(process.env.NEXT_PUBLIC_BASE_PATH || "/");
 const RECAPTCHA_SITE_KEY = (process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "").trim();
 const RECAPTCHA_SCRIPT_ID = "google-recaptcha-v3";
+const RECAPTCHA_READY_TIMEOUT_MS = 15_000;
+const RECAPTCHA_POLL_INTERVAL_MS = 50;
 
 let recaptchaScriptPromise = null;
 
@@ -231,6 +233,24 @@ function withBasePath(path) {
   return `${BASE_PATH}${path}`;
 }
 
+async function waitForRecaptchaApi(timeoutMs = RECAPTCHA_READY_TIMEOUT_MS) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const grecaptcha = window.grecaptcha;
+    if (grecaptcha && typeof grecaptcha.ready === "function" && typeof grecaptcha.execute === "function") {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, RECAPTCHA_POLL_INTERVAL_MS));
+  }
+
+  throw new Error("reCAPTCHA is unavailable");
+}
+
 function loadRecaptchaScript(siteKey) {
   if (typeof window === "undefined") {
     return Promise.resolve();
@@ -246,9 +266,14 @@ function loadRecaptchaScript(siteKey) {
 
   recaptchaScriptPromise = new Promise((resolve, reject) => {
     const existing = document.getElementById(RECAPTCHA_SCRIPT_ID);
+    const resolveWhenReady = () => {
+      void waitForRecaptchaApi().then(resolve).catch(reject);
+    };
+
     if (existing) {
-      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("load", resolveWhenReady, { once: true });
       existing.addEventListener("error", () => reject(new Error("Failed to load reCAPTCHA script")), { once: true });
+      resolveWhenReady();
       return;
     }
 
@@ -257,9 +282,14 @@ function loadRecaptchaScript(siteKey) {
     script.src = `https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(siteKey)}`;
     script.async = true;
     script.defer = true;
-    script.onload = () => resolve();
+    script.onload = resolveWhenReady;
     script.onerror = () => reject(new Error("Failed to load reCAPTCHA script"));
     document.head.appendChild(script);
+  });
+
+  recaptchaScriptPromise = recaptchaScriptPromise.catch((error) => {
+    recaptchaScriptPromise = null;
+    throw error;
   });
 
   return recaptchaScriptPromise;
@@ -321,6 +351,16 @@ export default function HomePage() {
   useEffect(() => {
     return () => closeRunStream();
   }, [closeRunStream]);
+
+  useEffect(() => {
+    if (!RECAPTCHA_SITE_KEY) {
+      return;
+    }
+
+    void loadRecaptchaScript(RECAPTCHA_SITE_KEY).catch(() => {
+      // Keep UI usable even if captcha preload fails; guarded requests will still report explicit errors.
+    });
+  }, []);
 
   const requestJson = useCallback(async (path, init = {}) => {
     const headers = new Headers(init.headers || {});
