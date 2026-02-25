@@ -31,6 +31,43 @@ export class PostgresRagStore implements IRagStore {
     return project;
   }
 
+  async updateProject(projectId: string, patch: Partial<Pick<Project, "name" | "description">>): Promise<Project> {
+    const current = await this.getProject(projectId);
+    if (!current) {
+      throw new Error(`project '${projectId}' not found`);
+    }
+
+    const next: Project = {
+      ...current,
+      name: patch.name ?? current.name,
+      description: patch.description ?? current.description
+    };
+
+    await this.db.query(
+      `update projects
+       set name = $2,
+           description = $3
+       where id = $1`,
+      [projectId, next.name, next.description ?? null]
+    );
+
+    return next;
+  }
+
+  async deleteProject(projectId: string): Promise<void> {
+    await this.db.withTransaction(async (client) => {
+      await client.query(`delete from retrieval_traces where project_id = $1`, [projectId]);
+      await client.query(`delete from messages where chat_id in (select id from chats where project_id = $1)`, [projectId]);
+      await client.query(`delete from chat_memory where chat_id in (select id from chats where project_id = $1)`, [projectId]);
+      await client.query(`delete from chats where project_id = $1`, [projectId]);
+      await client.query(`delete from chunks where project_id = $1`, [projectId]);
+      await client.query(`delete from document_parts where document_id in (select id from documents where project_id = $1)`, [projectId]);
+      await client.query(`delete from ingestion_jobs where project_id = $1`, [projectId]);
+      await client.query(`delete from documents where project_id = $1`, [projectId]);
+      await client.query(`delete from projects where id = $1`, [projectId]);
+    });
+  }
+
   async listProjects(): Promise<Project[]> {
     const result = await this.db.query<Project>(
       `select id, name, description, created_at::text
@@ -252,6 +289,38 @@ export class PostgresRagStore implements IRagStore {
     }
 
     return chat;
+  }
+
+  async updateChat(chatId: string, patch: Partial<Pick<ChatRecord, "title" | "updated_at">>): Promise<ChatRecord> {
+    const current = await this.getChat(chatId);
+    if (!current) {
+      throw new Error(`chat '${chatId}' not found`);
+    }
+
+    const next: ChatRecord = {
+      ...current,
+      title: patch.title ?? current.title,
+      updated_at: patch.updated_at ?? current.updated_at
+    };
+
+    await this.db.query(
+      `update chats
+       set title = $2,
+           updated_at = $3
+       where id = $1`,
+      [chatId, next.title, next.updated_at]
+    );
+
+    return next;
+  }
+
+  async deleteChat(chatId: string): Promise<void> {
+    await this.db.withTransaction(async (client) => {
+      await client.query(`delete from retrieval_traces where chat_id = $1`, [chatId]);
+      await client.query(`delete from messages where chat_id = $1`, [chatId]);
+      await client.query(`delete from chat_memory where chat_id = $1`, [chatId]);
+      await client.query(`delete from chats where id = $1`, [chatId]);
+    });
   }
 
   async getChat(chatId: string): Promise<ChatRecord | undefined> {

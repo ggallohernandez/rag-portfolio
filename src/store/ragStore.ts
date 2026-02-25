@@ -31,6 +31,52 @@ export class RagStore implements IRagStore {
     return project;
   }
 
+  async updateProject(projectId: string, patch: Partial<Pick<Project, "name" | "description">>): Promise<Project> {
+    const current = this.projects.get(projectId);
+    if (!current) {
+      throw new Error(`project '${projectId}' not found`);
+    }
+
+    const next: Project = {
+      ...current,
+      name: patch.name ?? current.name,
+      description: patch.description ?? current.description
+    };
+    this.projects.set(projectId, next);
+    return next;
+  }
+
+  async deleteProject(projectId: string): Promise<void> {
+    this.projects.delete(projectId);
+
+    const projectDocuments = [...this.documents.values()].filter((document) => document.project_id === projectId);
+    for (const document of projectDocuments) {
+      this.documents.delete(document.id);
+      this.documentParts.delete(document.id);
+    }
+    this.chunks.delete(projectId);
+
+    for (const [jobId, job] of this.ingestionJobs.entries()) {
+      if (job.project_id === projectId) {
+        this.ingestionJobs.delete(jobId);
+      }
+    }
+
+    const projectChats = [...this.chats.values()].filter((chat) => chat.project_id === projectId);
+    const projectChatIds = new Set(projectChats.map((chat) => chat.id));
+    for (const chat of projectChats) {
+      this.chats.delete(chat.id);
+      this.chatMessages.delete(chat.id);
+      this.chatMemories.delete(chat.id);
+    }
+
+    for (const [traceId, trace] of this.traces.entries()) {
+      if (trace.project_id === projectId || projectChatIds.has(trace.chat_id)) {
+        this.traces.delete(traceId);
+      }
+    }
+  }
+
   async listProjects(): Promise<Project[]> {
     return [...this.projects.values()].sort((a, b) => a.created_at.localeCompare(b.created_at));
   }
@@ -132,6 +178,33 @@ export class RagStore implements IRagStore {
     }
 
     return chat;
+  }
+
+  async updateChat(chatId: string, patch: Partial<Pick<ChatRecord, "title" | "updated_at">>): Promise<ChatRecord> {
+    const current = this.chats.get(chatId);
+    if (!current) {
+      throw new Error(`chat '${chatId}' not found`);
+    }
+
+    const next: ChatRecord = {
+      ...current,
+      title: patch.title ?? current.title,
+      updated_at: patch.updated_at ?? current.updated_at
+    };
+    this.chats.set(chatId, next);
+    return next;
+  }
+
+  async deleteChat(chatId: string): Promise<void> {
+    this.chats.delete(chatId);
+    this.chatMessages.delete(chatId);
+    this.chatMemories.delete(chatId);
+
+    for (const [traceId, trace] of this.traces.entries()) {
+      if (trace.chat_id === chatId) {
+        this.traces.delete(traceId);
+      }
+    }
   }
 
   async getChat(chatId: string): Promise<ChatRecord | undefined> {

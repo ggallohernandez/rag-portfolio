@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleHelp, Loader2, Plus, RefreshCw, SendHorizontal, Upload } from "lucide-react";
+import { CircleHelp, Loader2, Pencil, Plus, RefreshCw, SendHorizontal, Trash2, Upload } from "lucide-react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
@@ -548,6 +548,73 @@ export default function HomePage() {
     }
   }, [getCaptchaHeaders, loadProjects, requestJson]);
 
+  const handleRenameProject = useCallback(
+    async (projectId, currentName) => {
+      const nextName = window.prompt("Project name", currentName);
+      if (nextName === null) {
+        return;
+      }
+
+      const trimmed = nextName.trim();
+      if (!trimmed) {
+        setError("Project name cannot be empty.");
+        return;
+      }
+
+      setError("");
+      try {
+        const captchaHeaders = await getCaptchaHeaders("project_update");
+        await requestJson(withBasePath(`/api/projects/${projectId}`), {
+          method: "PATCH",
+          headers: captchaHeaders,
+          body: JSON.stringify({ name: trimmed })
+        });
+        await loadProjects();
+      } catch (renameError) {
+        setError(getErrorMessage(renameError));
+      }
+    },
+    [getCaptchaHeaders, loadProjects, requestJson]
+  );
+
+  const handleDeleteProject = useCallback(
+    async (projectId, projectName) => {
+      const confirmed = window.confirm(`Delete project "${projectName}"? This removes chats, messages, traces, and documents.`);
+      if (!confirmed) {
+        return;
+      }
+
+      setError("");
+      try {
+        const captchaHeaders = await getCaptchaHeaders("project_delete");
+        const response = await fetch(withBasePath(`/api/projects/${projectId}`), {
+          method: "DELETE",
+          headers: captchaHeaders
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || "Failed to delete project");
+        }
+
+        if (selectedProjectId === projectId) {
+          closeRunStream();
+          setActiveRunId(null);
+          resetPipeline();
+          setSelectedChatId(null);
+          setChats([]);
+          setDocs([]);
+          setMessages([]);
+        }
+
+        await loadProjects();
+      } catch (deleteError) {
+        setError(getErrorMessage(deleteError));
+      }
+    },
+    [closeRunStream, getCaptchaHeaders, loadProjects, resetPipeline, selectedProjectId]
+  );
+
   const handleCreateChat = useCallback(async () => {
     if (!selectedProjectId) {
       setError("Select a project first.");
@@ -574,6 +641,87 @@ export default function HomePage() {
       setError(getErrorMessage(createError));
     }
   }, [getCaptchaHeaders, loadMessagesForChat, requestJson, selectedProjectId]);
+
+  const handleRenameChat = useCallback(
+    async (chatId, currentTitle) => {
+      if (!selectedProjectId) {
+        setError("Select a project first.");
+        return;
+      }
+
+      const nextTitle = window.prompt("Chat title", currentTitle);
+      if (nextTitle === null) {
+        return;
+      }
+
+      const trimmed = nextTitle.trim();
+      if (!trimmed) {
+        setError("Chat title cannot be empty.");
+        return;
+      }
+
+      setError("");
+      try {
+        const captchaHeaders = await getCaptchaHeaders("chat_update");
+        const updated = await requestJson(withBasePath(`/api/projects/${selectedProjectId}/chats/${chatId}`), {
+          method: "PATCH",
+          headers: captchaHeaders,
+          body: JSON.stringify({ title: trimmed })
+        });
+
+        setChats((previous) => previous.map((chat) => (chat.id === chatId ? updated : chat)));
+      } catch (renameError) {
+        setError(getErrorMessage(renameError));
+      }
+    },
+    [getCaptchaHeaders, requestJson, selectedProjectId]
+  );
+
+  const handleDeleteChat = useCallback(
+    async (chatId, chatTitle) => {
+      if (!selectedProjectId) {
+        setError("Select a project first.");
+        return;
+      }
+
+      const confirmed = window.confirm(`Delete chat "${chatTitle}"? This removes all messages and traces in this chat.`);
+      if (!confirmed) {
+        return;
+      }
+
+      setError("");
+      try {
+        const captchaHeaders = await getCaptchaHeaders("chat_delete");
+        const response = await fetch(withBasePath(`/api/projects/${selectedProjectId}/chats/${chatId}`), {
+          method: "DELETE",
+          headers: captchaHeaders
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || "Failed to delete chat");
+        }
+
+        const data = await requestJson(withBasePath(`/api/projects/${selectedProjectId}/chats`));
+        const nextChats = data.chats || [];
+        const stillSelected = nextChats.some((chat) => chat.id === selectedChatId);
+        const nextSelectedChatId = stillSelected ? selectedChatId : nextChats[0]?.id ?? null;
+
+        setChats(nextChats);
+        setSelectedChatId(nextSelectedChatId);
+        await loadMessagesForChat(selectedProjectId, nextSelectedChatId);
+
+        if (!nextSelectedChatId) {
+          closeRunStream();
+          setActiveRunId(null);
+          resetPipeline();
+        }
+      } catch (deleteError) {
+        setError(getErrorMessage(deleteError));
+      }
+    },
+    [closeRunStream, getCaptchaHeaders, loadMessagesForChat, requestJson, resetPipeline, selectedChatId, selectedProjectId]
+  );
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -779,14 +927,35 @@ export default function HomePage() {
           <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
             <div className="max-h-48 space-y-2 overflow-y-auto pr-1 scroll-thin">
               {projects.map((project) => (
-                <Button
-                  key={project.id}
-                  variant={project.id === selectedProjectId ? "default" : "ghost"}
-                  className="w-full justify-start"
-                  onClick={() => setSelectedProjectId(project.id)}
-                >
-                  {project.name}
-                </Button>
+                <div key={project.id} className="flex items-center gap-2">
+                  <Button
+                    variant={project.id === selectedProjectId ? "default" : "ghost"}
+                    className="flex-1 justify-start truncate"
+                    onClick={() => setSelectedProjectId(project.id)}
+                  >
+                    {project.name}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 shrink-0"
+                    aria-label={`Rename project ${project.name}`}
+                    onClick={() => void handleRenameProject(project.id, project.name)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 shrink-0 text-red-300 hover:text-red-200"
+                    aria-label={`Delete project ${project.name}`}
+                    onClick={() => void handleDeleteProject(project.id, project.name)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               ))}
             </div>
 
@@ -802,14 +971,35 @@ export default function HomePage() {
 
             <div className="max-h-40 space-y-2 overflow-y-auto pr-1 scroll-thin">
               {chats.map((chat) => (
-                <Button
-                  key={chat.id}
-                  variant={chat.id === selectedChatId ? "default" : "ghost"}
-                  className="w-full justify-start"
-                  onClick={() => setSelectedChatId(chat.id)}
-                >
-                  {chat.title}
-                </Button>
+                <div key={chat.id} className="flex items-center gap-2">
+                  <Button
+                    variant={chat.id === selectedChatId ? "default" : "ghost"}
+                    className="flex-1 justify-start truncate"
+                    onClick={() => setSelectedChatId(chat.id)}
+                  >
+                    {chat.title}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 shrink-0"
+                    aria-label={`Rename chat ${chat.title}`}
+                    onClick={() => void handleRenameChat(chat.id, chat.title)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 shrink-0 text-red-300 hover:text-red-200"
+                    aria-label={`Delete chat ${chat.title}`}
+                    onClick={() => void handleDeleteChat(chat.id, chat.title)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               ))}
             </div>
 

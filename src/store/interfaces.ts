@@ -48,6 +48,8 @@ export interface IRunStore {
 
 export interface IRagStore {
   createProject(project: Project): Promise<Project>;
+  updateProject(projectId: string, patch: Partial<Pick<Project, "name" | "description">>): Promise<Project>;
+  deleteProject(projectId: string): Promise<void>;
   listProjects(): Promise<Project[]>;
   getProject(projectId: string): Promise<Project | undefined>;
 
@@ -68,6 +70,8 @@ export interface IRagStore {
   listIngestionJobs(projectId: string): Promise<IngestionJob[]>;
 
   createChat(chat: ChatRecord): Promise<ChatRecord>;
+  updateChat(chatId: string, patch: Partial<Pick<ChatRecord, "title" | "updated_at">>): Promise<ChatRecord>;
+  deleteChat(chatId: string): Promise<void>;
   getChat(chatId: string): Promise<ChatRecord | undefined>;
   listProjectChats(projectId: string): Promise<ChatRecord[]>;
 

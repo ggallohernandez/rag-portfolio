@@ -181,6 +181,62 @@ export function createApp(services: AppServices) {
     response.status(201).json({ ...project, project_id: project.id });
   });
 
+  router.patch("/api/projects/:projectId", withBotGuard("projectCreates", "project_update"), async (request, response) => {
+    const projectId = request.params.projectId;
+    const project = await services.ragStore.getProject(projectId);
+    if (!project) {
+      response.status(404).json({ error: `project '${projectId}' not found` });
+      return;
+    }
+
+    const name = typeof request.body?.name === "string" ? request.body.name.trim() : undefined;
+
+    let description: string | undefined;
+    if (Object.prototype.hasOwnProperty.call(request.body ?? {}, "description")) {
+      const value = request.body?.description;
+      if (value === null) {
+        description = undefined;
+      } else if (typeof value === "string") {
+        const trimmed = value.trim();
+        description = trimmed.length > 0 ? trimmed : undefined;
+      } else {
+        response.status(400).json({ error: "description must be a string or null" });
+        return;
+      }
+    }
+
+    if (name !== undefined && name.length === 0) {
+      response.status(400).json({ error: "name cannot be empty" });
+      return;
+    }
+
+    if (name === undefined && description === undefined) {
+      response.status(400).json({ error: "provide name or description to update" });
+      return;
+    }
+
+    const updated = await services.ragStore.updateProject(projectId, {
+      name,
+      description
+    });
+    response.json(updated);
+  });
+
+  router.delete(
+    "/api/projects/:projectId",
+    withBotGuard("projectCreates", "project_delete"),
+    async (request, response) => {
+      const projectId = request.params.projectId;
+      if (!(await services.ragStore.getProject(projectId))) {
+        response.status(404).json({ error: `project '${projectId}' not found` });
+        return;
+      }
+
+      await services.ragStore.deleteProject(projectId);
+      response.status(204).send();
+    }
+  );
+
   router.get("/api/projects", async (_request, response) => {
     response.json({ projects: await services.ragStore.listProjects() });
   });
@@ -305,6 +361,47 @@ export function createApp(services: AppServices) {
     await services.ragStore.createChat(chat);
     response.status(201).json(chat);
   });
+
+  router.patch(
+    "/api/projects/:projectId/chats/:chatId",
+    withBotGuard("chatCreates", "chat_update"),
+    async (request, response) => {
+      const { projectId, chatId } = request.params;
+      const chat = await services.ragStore.getChat(chatId);
+      if (!chat || chat.project_id !== projectId) {
+        response.status(404).json({ error: `chat '${chatId}' not found in project '${projectId}'` });
+        return;
+      }
+
+      const title = typeof request.body?.title === "string" ? request.body.title.trim() : "";
+      if (title.length === 0) {
+        response.status(400).json({ error: "title is required" });
+        return;
+      }
+
+      const updated = await services.ragStore.updateChat(chatId, {
+        title,
+        updated_at: new Date().toISOString()
+      });
+      response.json(updated);
+    }
+  );
+
+  router.delete(
+    "/api/projects/:projectId/chats/:chatId",
+    withBotGuard("chatCreates", "chat_delete"),
+    async (request, response) => {
+      const { projectId, chatId } = request.params;
+      const chat = await services.ragStore.getChat(chatId);
+      if (!chat || chat.project_id !== projectId) {
+        response.status(404).json({ error: `chat '${chatId}' not found in project '${projectId}'` });
+        return;
+      }
+
+      await services.ragStore.deleteChat(chatId);
+      response.status(204).send();
+    }
+  );
 
   router.get("/api/projects/:projectId/chats", async (request, response) => {
     const projectId = request.params.projectId;
