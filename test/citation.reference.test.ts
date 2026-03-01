@@ -18,6 +18,7 @@ describe("citation references", () => {
 
     const result = await service.generateAnswer("What does the agreement say?", candidates);
     expect(result.citations[0].location).toBe("page-3");
+    expect(result.citations[0].source_index).toBe(1);
   });
 
   it("falls back to chunk index when source is unavailable", async () => {
@@ -34,5 +35,6 @@ describe("citation references", () => {
 
     const result = await service.generateAnswer("Where is this?", candidates);
     expect(result.citations[0].location).toBe("chunk-5");
+    expect(result.citations[0].source_index).toBe(1);
   });
 });

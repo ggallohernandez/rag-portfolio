@@ -27,13 +27,14 @@ export class AnswerService {
 
     const answer =
       `Based on the indexed dataset, here is the best grounded response for "${query}":\n\n` +
-      evidence.map((line, index) => `${index + 1}. ${line}`).join("\n");
+      evidence.map((line, index) => `${index + 1}. ${line} [#${index + 1}]`).join("\n");
 
-    const citations: Citation[] = top.map((candidate) => ({
+    const citations: Citation[] = top.map((candidate, index) => ({
       document_id: candidate.document_id,
       chunk_id: candidate.chunk_id,
       preview: candidate.content.slice(0, 180),
-      location: buildCitationLocation(candidate)
+      location: buildCitationLocation(candidate),
+      source_index: index + 1
     }));
 
     const promptTokens = Math.max(1, Math.floor(query.length / 4));

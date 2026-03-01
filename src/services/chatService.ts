@@ -109,7 +109,14 @@ export class ChatService {
       status: "in_progress",
       correlation_id: correlationId,
       payload: {
-        count: retrieval.vectorCandidates.length
+        count: retrieval.vectorCandidates.length,
+        candidates: retrieval.vectorCandidates.slice(0, 8).map((candidate) => ({
+          chunk_id: candidate.chunk_id,
+          document_id: candidate.document_id,
+          score: candidate.score,
+          source: candidate.source,
+          preview: candidate.content.slice(0, 180)
+        }))
       }
     });
 
@@ -121,7 +128,14 @@ export class ChatService {
       status: "in_progress",
       correlation_id: correlationId,
       payload: {
-        count: retrieval.bm25Candidates.length
+        count: retrieval.bm25Candidates.length,
+        candidates: retrieval.bm25Candidates.slice(0, 8).map((candidate) => ({
+          chunk_id: candidate.chunk_id,
+          document_id: candidate.document_id,
+          score: candidate.score,
+          source: candidate.source,
+          preview: candidate.content.slice(0, 180)
+        }))
       }
     });
 

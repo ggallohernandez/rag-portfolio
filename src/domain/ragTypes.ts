@@ -67,6 +67,7 @@ export type Citation = {
   chunk_id: string;
   preview: string;
   location?: string;
+  source_index?: number;
 };
 
 export type MessageRecord = {

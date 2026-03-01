@@ -9,7 +9,8 @@ export class OpenAIAnswerService {
   ) {}
 
   async generateAnswer(query: string, candidates: RetrievalCandidate[]): Promise<GeneratedAnswer> {
-    const context = candidates
+    const contextCandidates = candidates.slice(0, 8);
+    const context = contextCandidates
       .slice(0, 8)
       .map(
         (candidate, index) =>
@@ -35,12 +36,7 @@ export class OpenAIAnswerService {
 
     const answer = completion.choices[0]?.message?.content?.trim() ?? "I could not produce an answer.";
 
-    const citations = candidates.slice(0, 4).map((candidate) => ({
-      document_id: candidate.document_id,
-      chunk_id: candidate.chunk_id,
-      preview: candidate.content.slice(0, 180),
-      location: buildCitationLocation(candidate)
-    }));
+    const citations = buildCitationsFromAnswer(answer, contextCandidates);
 
     const usage = completion.usage;
     return {
@@ -54,6 +50,45 @@ export class OpenAIAnswerService {
       model: this.model
     };
   }
+}
+
+function buildCitationsFromAnswer(answer: string, contextCandidates: RetrievalCandidate[]) {
+  const references = extractReferenceIndices(answer, contextCandidates.length);
+  const selected =
+    references.length > 0
+      ? references.map((reference) => ({
+          candidate: contextCandidates[reference - 1],
+          sourceIndex: reference
+        }))
+      : contextCandidates.map((candidate, index) => ({ candidate, sourceIndex: index + 1 }));
+
+  return selected
+    .filter((item) => item.candidate)
+    .map(({ candidate, sourceIndex }) => ({
+      document_id: candidate.document_id,
+      chunk_id: candidate.chunk_id,
+      preview: candidate.content.slice(0, 180),
+      location: buildCitationLocation(candidate),
+      source_index: sourceIndex
+    }));
+}
+
+function extractReferenceIndices(answer: string, maxReference: number): number[] {
+  const seen = new Set<number>();
+  const references: number[] = [];
+  const regex = /\[#(\d+)\]/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(answer)) !== null) {
+    const parsed = Number.parseInt(match[1], 10);
+    if (Number.isNaN(parsed) || parsed < 1 || parsed > maxReference || seen.has(parsed)) {
+      continue;
+    }
+    seen.add(parsed);
+    references.push(parsed);
+  }
+
+  return references;
 }
 
 function buildCitationLocation(candidate: RetrievalCandidate): string {

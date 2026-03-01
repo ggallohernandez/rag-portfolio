@@ -165,6 +165,15 @@ function buildPhaseEventMap(events) {
   return phaseMap;
 }
 
+function getCitationReferenceNumber(citation, fallbackIndex) {
+  const sourceIndex = toNumber(citation?.source_index, 0);
+  if (sourceIndex > 0) {
+    return sourceIndex;
+  }
+
+  return fallbackIndex + 1;
+}
+
 function MetricRow({ label, value }) {
   return (
     <p className="text-xs leading-relaxed text-slate-100">
@@ -254,6 +263,37 @@ function PipelinePhaseRunData({
         <MetricRow label="Total Tokens" value={toNumber(payload.embedding_total_tokens).toString()} />
         <MetricRow label="Token Source" value={safeText(payload.token_source)} />
         <MetricRow label="Cost (USD)" value={formatUsd(payload.embedding_cost_usd)} />
+      </div>
+    );
+  }
+
+  if (phase === "retrieved_vector" || phase === "retrieved_bm25") {
+    const candidates = Array.isArray(payload.candidates) ? payload.candidates : [];
+    return (
+      <div className="space-y-2">
+        <MetricRow label="Retrieved Chunks" value={toNumber(payload.count).toString()} />
+        {candidates.length > 0 ? (
+          <div className="max-h-56 space-y-2 overflow-y-auto rounded-md border border-slate-700/70 bg-slate-900/50 p-2">
+            {candidates.map((candidate, index) => {
+              const preview = safeText(candidate.preview, "(no preview)");
+              const score = toNumber(candidate.score).toFixed(4);
+              const source = safeText(candidate.source, "chunk");
+              return (
+                <div key={`${candidate.chunk_id}-${index}`} className="rounded-md border border-slate-700/70 bg-slate-950/60 p-2">
+                  <p className="font-mono text-[11px] text-cyan-200">
+                    {`[#${index + 1}] ${candidate.chunk_id}`} · {score}
+                  </p>
+                  <p className="text-[11px] text-slate-300">
+                    {candidate.document_id} · {source}
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-xs text-slate-100">{preview}</p>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">No chunk candidates recorded for this phase.</p>
+        )}
       </div>
     );
   }
@@ -1182,6 +1222,7 @@ export default function HomePage() {
                             {message.citations_json.map((citation, index) => {
                               const label = formatCitationLabel(citation, documentsById);
                               const preview = formatCitationPreview(citation);
+                              const referenceNumber = getCitationReferenceNumber(citation, index);
                               return (
                                 <Popover key={`${citation.chunk_id ?? citation.document_id}-${index}`}>
                                   <PopoverTrigger asChild>
@@ -1189,7 +1230,7 @@ export default function HomePage() {
                                       type="button"
                                       className="rounded-md border border-cyan-400/35 bg-cyan-500/10 px-2.5 py-1 font-mono text-[11px] text-cyan-200 transition-colors hover:bg-cyan-500/20"
                                     >
-                                      {`[#${index + 1}] ${label}`}
+                                      {`[#${referenceNumber}] ${label}`}
                                     </button>
                                   </PopoverTrigger>
                                   <PopoverContent

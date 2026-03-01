@@ -72,6 +72,16 @@ describe("query telemetry payloads", () => {
     expect(typeof queryEmbedded.embedding_cost_usd).toBe("number");
     expect(typeof queryEmbedded.token_source).toBe("string");
 
+    const retrievedVector = byPhase.get("retrieved_vector")!;
+    expect(Number(retrievedVector.count)).toBeGreaterThan(0);
+    expect(Array.isArray(retrievedVector.candidates)).toBe(true);
+    expect((retrievedVector.candidates as unknown[]).length).toBeGreaterThan(0);
+
+    const retrievedBm25 = byPhase.get("retrieved_bm25")!;
+    expect(Number(retrievedBm25.count)).toBeGreaterThan(0);
+    expect(Array.isArray(retrievedBm25.candidates)).toBe(true);
+    expect((retrievedBm25.candidates as unknown[]).length).toBeGreaterThan(0);
+
     const contextBuilt = byPhase.get("context_built")!;
     expect(typeof contextBuilt.context_preview).toBe("string");
     expect(typeof contextBuilt.context_full_redacted).toBe("string");
