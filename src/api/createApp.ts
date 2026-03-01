@@ -13,7 +13,6 @@ import { IngestionService } from "../services/ingestionService.js";
 import { Logger } from "../services/logger.js";
 import { MetricsRegistry } from "../services/metrics.js";
 import { InMemoryRateLimiter } from "../services/rateLimiter.js";
-import { verifyRecaptchaToken } from "../services/recaptcha.js";
 import { IRunStore, IRagStore } from "../store/interfaces.js";
 
 export type AppServices = {
@@ -67,10 +66,10 @@ export function createApp(services: AppServices) {
   type BotRateTarget = "projectCreates" | "chatCreates" | "messages" | "uploads" | "evalRuns";
 
   const withBotGuard =
-    (target: BotRateTarget, captchaAction: string) =>
+    (target: BotRateTarget) =>
     async (request: Request, response: Response, next: NextFunction): Promise<void> => {
       try {
-        if (await enforceBotGuard(request, response, target, captchaAction)) {
+        if (await enforceBotGuard(request, response, target)) {
           next();
         }
       } catch (error) {
@@ -99,8 +98,7 @@ export function createApp(services: AppServices) {
   async function enforceBotGuard(
     request: Request,
     response: Response,
-    target: BotRateTarget,
-    captchaAction: string
+    target: BotRateTarget
   ): Promise<boolean> {
     if (!botProtection.enabled) {
       return true;
@@ -121,43 +119,10 @@ export function createApp(services: AppServices) {
       return false;
     }
 
-    if (botProtection.recaptchaSecretKey.trim().length === 0) {
-      services.logger.error("bot protection enabled without recaptcha secret");
-      response.status(503).json({ error: "captcha is not configured on server" });
-      return false;
-    }
-
-    const captchaToken = request.header("x-captcha-token");
-    if (!captchaToken || captchaToken.trim().length === 0) {
-      response.status(403).json({ error: "captcha token is required" });
-      return false;
-    }
-    const normalizedCaptchaToken = captchaToken.trim();
-
-    const verification = await verifyRecaptchaToken({
-      token: normalizedCaptchaToken,
-      secretKey: botProtection.recaptchaSecretKey,
-      expectedAction: captchaAction,
-      minScore: botProtection.recaptchaMinScore,
-      remoteIp: clientIp !== "unknown" ? clientIp : undefined
-    });
-
-    if (!verification.ok) {
-      services.logger.info("captcha verification failed", {
-        ip: clientIp,
-        action: captchaAction,
-        reason: verification.reason
-      });
-      response.status(403).json({
-        error: "captcha verification failed"
-      });
-      return false;
-    }
-
     return true;
   }
 
-  router.post("/api/projects", withBotGuard("projectCreates", "project_create"), async (request, response) => {
+  router.post("/api/projects", withBotGuard("projectCreates"), async (request, response) => {
     const projectId =
       typeof request.body?.project_id === "string" && request.body.project_id.length > 0
         ? request.body.project_id
@@ -181,7 +146,7 @@ export function createApp(services: AppServices) {
     response.status(201).json({ ...project, project_id: project.id });
   });
 
-  router.patch("/api/projects/:projectId", withBotGuard("projectCreates", "project_update"), async (request, response) => {
+  router.patch("/api/projects/:projectId", withBotGuard("projectCreates"), async (request, response) => {
     const projectId = request.params.projectId;
     const project = await services.ragStore.getProject(projectId);
     if (!project) {
@@ -224,7 +189,7 @@ export function createApp(services: AppServices) {
 
   router.delete(
     "/api/projects/:projectId",
-    withBotGuard("projectCreates", "project_delete"),
+    withBotGuard("projectCreates"),
     async (request, response) => {
       const projectId = request.params.projectId;
       if (!(await services.ragStore.getProject(projectId))) {
@@ -243,7 +208,7 @@ export function createApp(services: AppServices) {
 
   router.post(
     "/api/projects/:projectId/documents",
-    withBotGuard("uploads", "document_upload"),
+    withBotGuard("uploads"),
     withUploadSingle,
     async (request, response) => {
     try {
@@ -340,7 +305,7 @@ export function createApp(services: AppServices) {
     response.json({ jobs: await services.ragStore.listIngestionJobs(projectId) });
   });
 
-  router.post("/api/projects/:projectId/chats", withBotGuard("chatCreates", "chat_create"), async (request, response) => {
+  router.post("/api/projects/:projectId/chats", withBotGuard("chatCreates"), async (request, response) => {
     const projectId = request.params.projectId;
     if (!(await services.ragStore.getProject(projectId))) {
       response.status(404).json({ error: `project '${projectId}' not found` });
@@ -364,7 +329,7 @@ export function createApp(services: AppServices) {
 
   router.patch(
     "/api/projects/:projectId/chats/:chatId",
-    withBotGuard("chatCreates", "chat_update"),
+    withBotGuard("chatCreates"),
     async (request, response) => {
       const { projectId, chatId } = request.params;
       const chat = await services.ragStore.getChat(chatId);
@@ -389,7 +354,7 @@ export function createApp(services: AppServices) {
 
   router.delete(
     "/api/projects/:projectId/chats/:chatId",
-    withBotGuard("chatCreates", "chat_delete"),
+    withBotGuard("chatCreates"),
     async (request, response) => {
       const { projectId, chatId } = request.params;
       const chat = await services.ragStore.getChat(chatId);
@@ -438,7 +403,7 @@ export function createApp(services: AppServices) {
 
   router.post(
     "/api/projects/:projectId/chats/:chatId/messages",
-    withBotGuard("messages", "chat_message"),
+    withBotGuard("messages"),
     async (request, response) => {
     const { projectId, chatId } = request.params;
     const content = typeof request.body?.content === "string" ? request.body.content.trim() : "";
@@ -521,7 +486,7 @@ export function createApp(services: AppServices) {
     });
   });
 
-  router.post("/api/evals/run", withBotGuard("evalRuns", "eval_run"), async (request, response) => {
+  router.post("/api/evals/run", withBotGuard("evalRuns"), async (request, response) => {
     const projectId = typeof request.body?.project_id === "string" ? request.body.project_id : undefined;
 
     if (!projectId || !(await services.ragStore.getProject(projectId))) {

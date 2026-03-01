@@ -4,8 +4,6 @@ export type BotProtectionConfig = {
   enabled: boolean;
   trustProxy: boolean;
   uploadMaxBytes: number;
-  recaptchaSecretKey: string;
-  recaptchaMinScore: number;
   rateLimits: {
     windowMs: number;
     projectCreates: number;
@@ -52,8 +50,6 @@ export function loadConfig(): AppConfig {
       enabled: botProtectionEnabled,
       trustProxy: toBool(process.env.BOT_TRUST_PROXY ?? "true"),
       uploadMaxBytes: toInt(process.env.BOT_UPLOAD_MAX_BYTES, 20 * 1024 * 1024, 1_048_576, 100 * 1024 * 1024),
-      recaptchaSecretKey: process.env.RECAPTCHA_SECRET_KEY ?? "",
-      recaptchaMinScore: toFloat(process.env.RECAPTCHA_MIN_SCORE, 0.5, 0, 1),
       rateLimits: {
         windowMs: botRateLimitWindowMs,
         projectCreates: toInt(process.env.BOT_PROJECT_CREATES_PER_WINDOW, 15, 1, 10_000),
@@ -89,15 +85,6 @@ function toBool(value: string): boolean {
 
 function toInt(value: string | undefined, fallback: number, min: number, max: number): number {
   const parsed = Number.parseInt(value ?? "", 10);
-  if (Number.isNaN(parsed)) {
-    return fallback;
-  }
-
-  return Math.min(Math.max(parsed, min), max);
-}
-
-function toFloat(value: string | undefined, fallback: number, min: number, max: number): number {
-  const parsed = Number.parseFloat(value ?? "");
   if (Number.isNaN(parsed)) {
     return fallback;
   }

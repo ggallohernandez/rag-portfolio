@@ -7,8 +7,6 @@ const botProtection = {
   enabled: false,
   trustProxy: true,
   uploadMaxBytes: 20 * 1024 * 1024,
-  recaptchaSecretKey: "",
-  recaptchaMinScore: 0.5,
   rateLimits: {
     windowMs: 60_000,
     projectCreates: 15,

@@ -35,12 +35,6 @@ const QUERY_PHASES = [
 
 const ALL_PHASES = [...INGESTION_PHASES, ...QUERY_PHASES];
 const BASE_PATH = normalizeBasePath(process.env.NEXT_PUBLIC_BASE_PATH || "/");
-const RECAPTCHA_SITE_KEY = (process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "").trim();
-const RECAPTCHA_SCRIPT_ID = "google-recaptcha-v3";
-const RECAPTCHA_READY_TIMEOUT_MS = 15_000;
-const RECAPTCHA_POLL_INTERVAL_MS = 50;
-
-let recaptchaScriptPromise = null;
 
 const PHASE_DETAILS = {
   uploaded: {
@@ -233,84 +227,6 @@ function withBasePath(path) {
   return `${BASE_PATH}${path}`;
 }
 
-async function waitForRecaptchaApi(timeoutMs = RECAPTCHA_READY_TIMEOUT_MS) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const grecaptcha = window.grecaptcha;
-    if (grecaptcha && typeof grecaptcha.ready === "function" && typeof grecaptcha.execute === "function") {
-      return;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, RECAPTCHA_POLL_INTERVAL_MS));
-  }
-
-  throw new Error("reCAPTCHA is unavailable");
-}
-
-function loadRecaptchaScript(siteKey) {
-  if (typeof window === "undefined") {
-    return Promise.resolve();
-  }
-
-  if (window.grecaptcha && typeof window.grecaptcha.execute === "function") {
-    return Promise.resolve();
-  }
-
-  if (recaptchaScriptPromise) {
-    return recaptchaScriptPromise;
-  }
-
-  recaptchaScriptPromise = new Promise((resolve, reject) => {
-    const existing = document.getElementById(RECAPTCHA_SCRIPT_ID);
-    const resolveWhenReady = () => {
-      void waitForRecaptchaApi().then(resolve).catch(reject);
-    };
-
-    if (existing) {
-      existing.addEventListener("load", resolveWhenReady, { once: true });
-      existing.addEventListener("error", () => reject(new Error("Failed to load reCAPTCHA script")), { once: true });
-      resolveWhenReady();
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.id = RECAPTCHA_SCRIPT_ID;
-    script.src = `https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(siteKey)}`;
-    script.async = true;
-    script.defer = true;
-    script.onload = resolveWhenReady;
-    script.onerror = () => reject(new Error("Failed to load reCAPTCHA script"));
-    document.head.appendChild(script);
-  });
-
-  recaptchaScriptPromise = recaptchaScriptPromise.catch((error) => {
-    recaptchaScriptPromise = null;
-    throw error;
-  });
-
-  return recaptchaScriptPromise;
-}
-
-async function getRecaptchaToken(action) {
-  if (!RECAPTCHA_SITE_KEY) {
-    return "";
-  }
-
-  await loadRecaptchaScript(RECAPTCHA_SITE_KEY);
-
-  const grecaptcha = window.grecaptcha;
-  if (!grecaptcha || typeof grecaptcha.ready !== "function" || typeof grecaptcha.execute !== "function") {
-    throw new Error("reCAPTCHA is unavailable");
-  }
-
-  await new Promise((resolve) => grecaptcha.ready(resolve));
-  return grecaptcha.execute(RECAPTCHA_SITE_KEY, { action });
-}
-
 export default function HomePage() {
   const [projects, setProjects] = useState([]);
   const [chats, setChats] = useState([]);
@@ -352,16 +268,6 @@ export default function HomePage() {
     return () => closeRunStream();
   }, [closeRunStream]);
 
-  useEffect(() => {
-    if (!RECAPTCHA_SITE_KEY) {
-      return;
-    }
-
-    void loadRecaptchaScript(RECAPTCHA_SITE_KEY).catch(() => {
-      // Keep UI usable even if captcha preload fails; guarded requests will still report explicit errors.
-    });
-  }, []);
-
   const requestJson = useCallback(async (path, init = {}) => {
     const headers = new Headers(init.headers || {});
     if (!(init.body instanceof FormData) && !headers.has("Content-Type")) {
@@ -374,15 +280,6 @@ export default function HomePage() {
       throw new Error(text || `Request failed (${response.status})`);
     }
     return response.json();
-  }, []);
-
-  const getCaptchaHeaders = useCallback(async (action) => {
-    const token = await getRecaptchaToken(action);
-    if (!token) {
-      return {};
-    }
-
-    return { "X-Captcha-Token": token };
   }, []);
 
   const loadProjects = useCallback(async () => {
@@ -540,10 +437,8 @@ export default function HomePage() {
 
     setError("");
     try {
-      const captchaHeaders = await getCaptchaHeaders("project_create");
       const created = await requestJson(withBasePath("/api/projects"), {
         method: "POST",
-        headers: captchaHeaders,
         body: JSON.stringify({ name: name.trim() })
       });
       await loadProjects();
@@ -551,7 +446,7 @@ export default function HomePage() {
     } catch (createError) {
       setError(getErrorMessage(createError));
     }
-  }, [getCaptchaHeaders, loadProjects, requestJson]);
+  }, [loadProjects, requestJson]);
 
   const handleRenameProject = useCallback(
     async (projectId, currentName) => {
@@ -568,10 +463,8 @@ export default function HomePage() {
 
       setError("");
       try {
-        const captchaHeaders = await getCaptchaHeaders("project_update");
         await requestJson(withBasePath(`/api/projects/${projectId}`), {
           method: "PATCH",
-          headers: captchaHeaders,
           body: JSON.stringify({ name: trimmed })
         });
         await loadProjects();
@@ -579,7 +472,7 @@ export default function HomePage() {
         setError(getErrorMessage(renameError));
       }
     },
-    [getCaptchaHeaders, loadProjects, requestJson]
+    [loadProjects, requestJson]
   );
 
   const handleDeleteProject = useCallback(
@@ -591,10 +484,8 @@ export default function HomePage() {
 
       setError("");
       try {
-        const captchaHeaders = await getCaptchaHeaders("project_delete");
         const response = await fetch(withBasePath(`/api/projects/${projectId}`), {
-          method: "DELETE",
-          headers: captchaHeaders
+          method: "DELETE"
         });
 
         if (!response.ok) {
@@ -617,7 +508,7 @@ export default function HomePage() {
         setError(getErrorMessage(deleteError));
       }
     },
-    [closeRunStream, getCaptchaHeaders, loadProjects, resetPipeline, selectedProjectId]
+    [closeRunStream, loadProjects, resetPipeline, selectedProjectId]
   );
 
   const handleCreateChat = useCallback(async () => {
@@ -633,10 +524,8 @@ export default function HomePage() {
 
     setError("");
     try {
-      const captchaHeaders = await getCaptchaHeaders("chat_create");
       const created = await requestJson(withBasePath(`/api/projects/${selectedProjectId}/chats`), {
         method: "POST",
-        headers: captchaHeaders,
         body: JSON.stringify({ title: title.trim() })
       });
       setChats((previous) => [created, ...previous]);
@@ -645,7 +534,7 @@ export default function HomePage() {
     } catch (createError) {
       setError(getErrorMessage(createError));
     }
-  }, [getCaptchaHeaders, loadMessagesForChat, requestJson, selectedProjectId]);
+  }, [loadMessagesForChat, requestJson, selectedProjectId]);
 
   const handleRenameChat = useCallback(
     async (chatId, currentTitle) => {
@@ -667,10 +556,8 @@ export default function HomePage() {
 
       setError("");
       try {
-        const captchaHeaders = await getCaptchaHeaders("chat_update");
         const updated = await requestJson(withBasePath(`/api/projects/${selectedProjectId}/chats/${chatId}`), {
           method: "PATCH",
-          headers: captchaHeaders,
           body: JSON.stringify({ title: trimmed })
         });
 
@@ -679,7 +566,7 @@ export default function HomePage() {
         setError(getErrorMessage(renameError));
       }
     },
-    [getCaptchaHeaders, requestJson, selectedProjectId]
+    [requestJson, selectedProjectId]
   );
 
   const handleDeleteChat = useCallback(
@@ -696,10 +583,8 @@ export default function HomePage() {
 
       setError("");
       try {
-        const captchaHeaders = await getCaptchaHeaders("chat_delete");
         const response = await fetch(withBasePath(`/api/projects/${selectedProjectId}/chats/${chatId}`), {
-          method: "DELETE",
-          headers: captchaHeaders
+          method: "DELETE"
         });
 
         if (!response.ok) {
@@ -725,7 +610,7 @@ export default function HomePage() {
         setError(getErrorMessage(deleteError));
       }
     },
-    [closeRunStream, getCaptchaHeaders, loadMessagesForChat, requestJson, resetPipeline, selectedChatId, selectedProjectId]
+    [closeRunStream, loadMessagesForChat, requestJson, resetPipeline, selectedChatId, selectedProjectId]
   );
 
   const handleRefresh = useCallback(async () => {
@@ -770,10 +655,8 @@ export default function HomePage() {
         formData.append("file", file);
 
         try {
-          const captchaHeaders = await getCaptchaHeaders("document_upload");
           const response = await fetch(withBasePath(`/api/projects/${selectedProjectId}/documents`), {
             method: "POST",
-            headers: captchaHeaders,
             body: formData
           });
 
@@ -804,7 +687,7 @@ export default function HomePage() {
       }
       setIsUploading(false);
     },
-    [getCaptchaHeaders, requestJson, selectedProjectId, trackRun]
+    [requestJson, selectedProjectId, trackRun]
   );
 
   const sendMessage = useCallback(async () => {
@@ -830,13 +713,11 @@ export default function HomePage() {
     ]);
 
     try {
-      const captchaHeaders = await getCaptchaHeaders("chat_message");
       const response = await fetch(withBasePath(`/api/projects/${selectedProjectId}/chats/${selectedChatId}/messages`), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Accept: "text/event-stream",
-          ...captchaHeaders
+          Accept: "text/event-stream"
         },
         body: JSON.stringify({ content, stream: true })
       });
@@ -914,7 +795,7 @@ export default function HomePage() {
     } finally {
       setIsSending(false);
     }
-  }, [composer, getCaptchaHeaders, isSending, loadMessagesForChat, selectedChatId, selectedProjectId, trackRun]);
+  }, [composer, isSending, loadMessagesForChat, selectedChatId, selectedProjectId, trackRun]);
 
   return (
     <div className="min-h-screen bg-workspace-gradient">

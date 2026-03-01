@@ -23,12 +23,7 @@ Showcase RAG system with:
 
 ## Bot Protection (Public Deployments)
 - Enable with `BOT_PROTECTION_ENABLED=true`.
-- Configure Google reCAPTCHA v3 keys:
-  - `RECAPTCHA_SECRET_KEY` (server verification secret)
-  - `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` (frontend site key)
-- Protected write/costly endpoints require both:
-  - passing IP rate-limit window checks
-  - valid `X-Captcha-Token` verification
+- Protected write/costly endpoints require passing IP rate-limit window checks.
 - Default protected endpoints:
   - `POST /api/projects`
   - `POST /api/projects/:projectId/chats`

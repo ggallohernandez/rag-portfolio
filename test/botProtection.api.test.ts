@@ -5,8 +5,6 @@ import { buildContainer } from "../src/bootstrap.js";
 const BOT_ENV_KEYS = [
   "BOT_PROTECTION_ENABLED",
   "BOT_TRUST_PROXY",
-  "RECAPTCHA_SECRET_KEY",
-  "RECAPTCHA_MIN_SCORE",
   "BOT_RATE_LIMIT_WINDOW_MS",
   "BOT_PROJECT_CREATES_PER_WINDOW",
   "BOT_CHAT_CREATES_PER_WINDOW",
@@ -36,41 +34,31 @@ describe("bot protection API guard", () => {
     }
   });
 
-  it("rejects protected endpoint requests without captcha token", async () => {
+  it("accepts protected endpoint requests without captcha token", async () => {
     process.env.BOT_PROTECTION_ENABLED = "true";
-    process.env.RECAPTCHA_SECRET_KEY = "secret";
 
     const container = await buildContainer();
 
-    await request(container.app).post("/api/projects").send({ name: "No Token" }).expect(403);
+    await request(container.app).post("/api/projects").send({ name: "No Token" }).expect(201);
   });
 
-  it("accepts requests with valid captcha token", async () => {
+  it("enforces project-create rate limits when protection is enabled", async () => {
     process.env.BOT_PROTECTION_ENABLED = "true";
-    process.env.RECAPTCHA_SECRET_KEY = "secret";
-
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          success: true,
-          score: 0.9,
-          action: "project_create"
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        }
-      )
-    );
+    process.env.BOT_RATE_LIMIT_WINDOW_MS = "60000";
+    process.env.BOT_PROJECT_CREATES_PER_WINDOW = "1";
 
     const container = await buildContainer();
 
-    const response = await request(container.app)
+    const first = await request(container.app)
       .post("/api/projects")
-      .set("X-Captcha-Token", "token")
-      .send({ project_id: "bot-guard-ok", name: "Protected" })
+      .send({ project_id: "bot-guard-ok-1", name: "Protected 1" })
       .expect(201);
 
-    expect(response.body.project_id).toBe("bot-guard-ok");
+    expect(first.body.project_id).toBe("bot-guard-ok-1");
+
+    await request(container.app)
+      .post("/api/projects")
+      .send({ project_id: "bot-guard-ok-2", name: "Protected 2" })
+      .expect(429);
   });
 });
