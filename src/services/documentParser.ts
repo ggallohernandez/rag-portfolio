@@ -36,20 +36,38 @@ export async function parseDocument(
 }
 
 async function parsePdf(documentId: string, body: Buffer): Promise<ParsedDocument> {
+  const pageMarker = "__RAG_PDF_PAGE__";
+
   try {
-    const parsed = await pdfParse(body);
-    const text = parsed.text?.trim() ?? "";
+    let pageCounter = 0;
+    const parsed = await pdfParse(body, {
+      pagerender: async (pageData: any): Promise<string> => {
+        pageCounter += 1;
+        const textContent = await pageData.getTextContent({
+          normalizeWhitespace: false,
+          disableCombineTextItems: false
+        });
+
+        let lastY: number | undefined;
+        let text = "";
+
+        for (const item of textContent.items as Array<{ str?: string; transform?: number[] }>) {
+          const currentY = item.transform?.[5];
+          if (typeof currentY === "number" && typeof lastY === "number" && currentY !== lastY) {
+            text += "\n";
+          }
+
+          text += item.str ?? "";
+          lastY = currentY;
+        }
+
+        return `${pageMarker}${pageCounter}\n${text}`;
+      }
+    });
+    const parts = extractPdfParts(documentId, parsed.text ?? "", pageMarker);
 
     return {
-      parts: [
-        {
-          id: uuidv4(),
-          document_id: documentId,
-          page_or_sheet: "page-1",
-          raw_text: text,
-          metadata_json: { parser: "pdf-parse" }
-        }
-      ],
+      parts,
       ocr_status: "skipped"
     };
   } catch {
@@ -66,6 +84,58 @@ async function parsePdf(documentId: string, body: Buffer): Promise<ParsedDocumen
       ocr_status: "skipped"
     };
   }
+}
+
+function extractPdfParts(documentId: string, fullText: string, marker: string): DocumentPart[] {
+  const markerRegex = new RegExp(`${escapeRegExp(marker)}(\\d+)\\n`, "g");
+  const matches: Array<{ pageNumber: number; markerStart: number; contentStart: number }> = [];
+
+  let match: RegExpExecArray | null;
+  while ((match = markerRegex.exec(fullText)) !== null) {
+    const pageNumber = Number.parseInt(match[1], 10);
+    if (Number.isNaN(pageNumber)) {
+      continue;
+    }
+
+    matches.push({
+      pageNumber,
+      markerStart: match.index,
+      contentStart: match.index + match[0].length
+    });
+  }
+
+  if (matches.length === 0) {
+    return [
+      {
+        id: uuidv4(),
+        document_id: documentId,
+        page_or_sheet: "page-1",
+        raw_text: fullText.trim(),
+        metadata_json: { parser: "pdf-parse" }
+      }
+    ];
+  }
+
+  const parts: DocumentPart[] = [];
+  for (let index = 0; index < matches.length; index += 1) {
+    const current = matches[index];
+    const next = matches[index + 1];
+    const rawText = fullText.slice(current.contentStart, next?.markerStart ?? fullText.length).trim();
+
+    parts.push({
+      id: uuidv4(),
+      document_id: documentId,
+      page_or_sheet: `page-${current.pageNumber}`,
+      raw_text: rawText,
+      metadata_json: { parser: "pdf-parse", page: current.pageNumber }
+    });
+  }
+
+  return parts;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function parseXlsx(documentId: string, body: Buffer): ParsedDocument {
