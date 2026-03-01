@@ -82,6 +82,13 @@ describe("query telemetry payloads", () => {
     expect(Array.isArray(retrievedBm25.candidates)).toBe(true);
     expect((retrievedBm25.candidates as unknown[]).length).toBeGreaterThan(0);
 
+    const reranked = byPhase.get("reranked")!;
+    expect(Number(reranked.count)).toBeGreaterThan(0);
+    expect(Array.isArray(reranked.candidates)).toBe(true);
+    expect((reranked.candidates as unknown[]).length).toBeGreaterThan(0);
+    const rerankedCandidate = (reranked.candidates as Array<Record<string, unknown>>)[0];
+    expect(["both", "vector", "bm25", "unknown"]).toContain(rerankedCandidate.retrieval_origin);
+
     const contextBuilt = byPhase.get("context_built")!;
     expect(typeof contextBuilt.context_preview).toBe("string");
     expect(typeof contextBuilt.context_full_redacted).toBe("string");

@@ -139,6 +139,9 @@ export class ChatService {
       }
     });
 
+    const vectorChunkIds = new Set(retrieval.vectorCandidates.map((candidate) => candidate.chunk_id));
+    const bm25ChunkIds = new Set(retrieval.bm25Candidates.map((candidate) => candidate.chunk_id));
+
     await this.emitter.emit({
       run_id: runId,
       project_id: projectId,
@@ -147,7 +150,15 @@ export class ChatService {
       status: "in_progress",
       correlation_id: correlationId,
       payload: {
-        count: retrieval.rerankedCandidates.length
+        count: retrieval.rerankedCandidates.length,
+        candidates: retrieval.rerankedCandidates.slice(0, 8).map((candidate) => ({
+          chunk_id: candidate.chunk_id,
+          document_id: candidate.document_id,
+          score: candidate.score,
+          source: candidate.source,
+          preview: candidate.content.slice(0, 180),
+          retrieval_origin: classifyRetrievalOrigin(candidate.chunk_id, vectorChunkIds, bm25ChunkIds)
+        }))
       }
     });
 
@@ -282,4 +293,27 @@ function toNumber(value: unknown): number {
   }
 
   return 0;
+}
+
+function classifyRetrievalOrigin(
+  chunkId: string,
+  vectorChunkIds: Set<string>,
+  bm25ChunkIds: Set<string>
+): "both" | "vector" | "bm25" | "unknown" {
+  const inVector = vectorChunkIds.has(chunkId);
+  const inBm25 = bm25ChunkIds.has(chunkId);
+
+  if (inVector && inBm25) {
+    return "both";
+  }
+
+  if (inVector) {
+    return "vector";
+  }
+
+  if (inBm25) {
+    return "bm25";
+  }
+
+  return "unknown";
 }

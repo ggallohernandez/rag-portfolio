@@ -267,17 +267,18 @@ function PipelinePhaseRunData({
     );
   }
 
-  if (phase === "retrieved_vector" || phase === "retrieved_bm25") {
+  if (phase === "retrieved_vector" || phase === "retrieved_bm25" || phase === "reranked") {
     const candidates = Array.isArray(payload.candidates) ? payload.candidates : [];
     return (
       <div className="space-y-2">
-        <MetricRow label="Retrieved Chunks" value={toNumber(payload.count).toString()} />
+        <MetricRow label={phase === "reranked" ? "Selected Chunks" : "Retrieved Chunks"} value={toNumber(payload.count).toString()} />
         {candidates.length > 0 ? (
           <div className="max-h-56 space-y-2 overflow-y-auto rounded-md border border-slate-700/70 bg-slate-900/50 p-2">
             {candidates.map((candidate, index) => {
               const preview = safeText(candidate.preview, "(no preview)");
               const score = toNumber(candidate.score).toFixed(4);
               const source = safeText(candidate.source, "chunk");
+              const retrievalOrigin = safeText(candidate.retrieval_origin, "unknown");
               return (
                 <div key={`${candidate.chunk_id}-${index}`} className="rounded-md border border-slate-700/70 bg-slate-950/60 p-2">
                   <p className="font-mono text-[11px] text-cyan-200">
@@ -286,6 +287,11 @@ function PipelinePhaseRunData({
                   <p className="text-[11px] text-slate-300">
                     {candidate.document_id} · {source}
                   </p>
+                  {phase === "reranked" ? (
+                    <p className="text-[11px] text-slate-300">
+                      Origin: {retrievalOrigin === "both" ? "vector + bm25" : retrievalOrigin}
+                    </p>
+                  ) : null}
                   <p className="mt-1 whitespace-pre-wrap break-words text-xs text-slate-100">{preview}</p>
                 </div>
               );
@@ -360,7 +366,7 @@ function PipelinePhaseRunData({
     );
   }
 
-  if (phase === "query_received" || phase === "retrieved_vector" || phase === "retrieved_bm25" || phase === "reranked" || phase === "answer_streaming" || phase === "indexed" || phase === "ocr") {
+  if (phase === "query_received" || phase === "answer_streaming" || phase === "indexed" || phase === "ocr") {
     return (
       <div className="space-y-1.5">
         {Object.entries(payload).map(([key, value]) => (
