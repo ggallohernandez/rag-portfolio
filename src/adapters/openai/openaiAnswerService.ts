@@ -50,7 +50,8 @@ export class OpenAIAnswerService {
         prompt_tokens: usage?.prompt_tokens ?? 0,
         completion_tokens: usage?.completion_tokens ?? 0,
         total_tokens: usage?.total_tokens ?? 0
-      }
+      },
+      model: this.model
     };
   }
 }

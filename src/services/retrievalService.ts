@@ -1,28 +1,28 @@
 import { ChunkRecord, RetrievalCandidate } from "../domain/ragTypes.js";
 import { IRagStore } from "../store/interfaces.js";
-import { EmbeddingService } from "./embeddingService.js";
 import { tokenize } from "./chunker.js";
-import { RetrievalEngine, RetrievalResult } from "./contracts.js";
+import type { EmbeddingGenerator, RetrievalEngine, RetrievalResult } from "./contracts.js";
 
 export class RetrievalService implements RetrievalEngine {
   constructor(
     private readonly ragStore: IRagStore,
-    private readonly embeddingService: EmbeddingService
+    private readonly embeddingService: EmbeddingGenerator
   ) {}
 
   async retrieve(projectId: string, query: string, k = 8): Promise<RetrievalResult> {
+    const queryEmbedding = await this.embeddingService.embed(query);
     const chunks = await this.ragStore.listProjectChunks(projectId);
     if (chunks.length === 0) {
       return {
         vectorCandidates: [],
         bm25Candidates: [],
         fusedCandidates: [],
-        rerankedCandidates: []
+        rerankedCandidates: [],
+        queryEmbedding: queryEmbedding.telemetry
       };
     }
 
-    const queryEmbedding = await this.embeddingService.embed(query);
-    const vectorCandidates = scoreVector(chunks, queryEmbedding).slice(0, k * 2);
+    const vectorCandidates = scoreVector(chunks, queryEmbedding.vector).slice(0, k * 2);
     const bm25Candidates = scoreBm25(chunks, query).slice(0, k * 2);
 
     const fusedCandidates = rrfFuse(vectorCandidates, bm25Candidates).slice(0, k * 2);
@@ -32,7 +32,8 @@ export class RetrievalService implements RetrievalEngine {
       vectorCandidates,
       bm25Candidates,
       fusedCandidates,
-      rerankedCandidates
+      rerankedCandidates,
+      queryEmbedding: queryEmbedding.telemetry
     };
   }
 }

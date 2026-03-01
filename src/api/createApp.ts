@@ -261,7 +261,11 @@ export function createApp(services: AppServices) {
 
       await services.ragStore.createDocument(document);
 
-      const job = await services.ingestionService.enqueueDocument(document.id);
+      const job = await services.ingestionService.enqueueDocument(document.id, {
+        filename,
+        mimeType,
+        fileSizeBytes: fileBuffer.length
+      });
 
       response.status(202).json({
         document,

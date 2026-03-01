@@ -4,6 +4,7 @@ export type GeneratedAnswer = {
   answer: string;
   citations: Citation[];
   token_usage_json: Record<string, number>;
+  model: string;
 };
 
 export class AnswerService {
@@ -16,7 +17,8 @@ export class AnswerService {
           prompt_tokens: 0,
           completion_tokens: 0,
           total_tokens: 0
-        }
+        },
+        model: "deterministic-rag"
       };
     }
 
@@ -44,7 +46,8 @@ export class AnswerService {
         prompt_tokens: promptTokens,
         completion_tokens: completionTokens,
         total_tokens: promptTokens + completionTokens
-      }
+      },
+      model: "deterministic-rag"
     };
   }
 }

@@ -16,6 +16,13 @@ Showcase RAG system with:
   - Postgres/pgvector + Redis/BullMQ + MinIO + OpenAI
   - requires `OPENAI_API_KEY`
 
+## Pipeline Telemetry Cost/Context Settings
+- `OPENAI_EMBEDDING_USD_PER_1M_TOKENS` (default `0`)
+- `OPENAI_CHAT_INPUT_USD_PER_1M_TOKENS` (default `0`)
+- `OPENAI_CHAT_OUTPUT_USD_PER_1M_TOKENS` (default `0`)
+- `PIPELINE_CONTEXT_MAX_CHARS` (default `4000`)
+- `PIPELINE_CONTEXT_REDACTION_ENABLED` (default `true`)
+
 ## Base Path
 - `BASE_PATH=/` by default.
 - Set `BASE_PATH=/rag` to mount UI and API under `/rag` (for example: `/rag`, `/rag/api/...`, `/rag/health`).

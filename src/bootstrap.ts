@@ -28,6 +28,7 @@ import { RunWatchdog } from "./services/watchdog.js";
 import { RagStore } from "./store/ragStore.js";
 import { RunStore } from "./store/runStore.js";
 import { IRagStore, IRunStore } from "./store/interfaces.js";
+import type { EmbeddingGenerator } from "./services/contracts.js";
 
 export type AppContainer = {
   app: ReturnType<typeof createApp>;
@@ -94,7 +95,7 @@ export async function buildContainer(now: () => number = () => Date.now()): Prom
     objectStorage = new LocalObjectStorage(path.resolve(process.cwd(), "data", "objects"));
   }
 
-  let embeddingService: { embed: (text: string) => Promise<number[]>; embedBatch: (texts: string[]) => Promise<number[][]> };
+  let embeddingService: EmbeddingGenerator;
   let retrievalService: RetrievalService | OpenAIRetrievalService;
   let answerService: AnswerService | OpenAIAnswerService;
 
@@ -127,10 +128,19 @@ export async function buildContainer(now: () => number = () => Date.now()): Prom
     emitter,
     embeddingService,
     objectStorage,
-    logger
+    logger,
+    {
+      embeddingUsdPer1MTokens: config.openai.embeddingUsdPer1MTokens
+    }
   );
 
-  const chatService = new ChatService(ragStore, store, emitter, retrievalService, answerService, memoryService);
+  const chatService = new ChatService(ragStore, store, emitter, retrievalService, answerService, memoryService, {
+    embeddingUsdPer1MTokens: config.openai.embeddingUsdPer1MTokens,
+    chatInputUsdPer1MTokens: config.openai.chatInputUsdPer1MTokens,
+    chatOutputUsdPer1MTokens: config.openai.chatOutputUsdPer1MTokens,
+    contextMaxChars: config.pipeline.contextMaxChars,
+    contextRedactionEnabled: config.pipeline.contextRedactionEnabled
+  });
 
   const evalService = new EvalService(ragStore, retrievalService, answerService);
   await evalService.seedDefaults();

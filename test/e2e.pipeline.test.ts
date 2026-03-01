@@ -49,7 +49,16 @@ describe("end-to-end async pipeline", () => {
     expect(queryResponse.body.state.current_phase).toBe("query_received");
 
     const queryEvents = [
-      { seq: 2, phase: "query_embedded", status: "in_progress" },
+      {
+        seq: 2,
+        phase: "query_embedded",
+        status: "in_progress",
+        payload: {
+          embedding_model: "text-embedding-3-small",
+          embedding_total_tokens: 42,
+          embedding_cost_usd: 0.000002
+        }
+      },
       { seq: 3, phase: "retrieved_vector", status: "in_progress" },
       { seq: 4, phase: "retrieved_bm25", status: "in_progress" },
       { seq: 5, phase: "reranked", status: "in_progress" },
@@ -61,6 +70,8 @@ describe("end-to-end async pipeline", () => {
         status: "completed",
         payload: {
           answer: "The chunker uses 500 token windows.",
+          answer_total_tokens: 120,
+          total_cost_usd: 0.0004,
           citations: [
             {
               document_id: "doc-1",
@@ -99,6 +110,8 @@ describe("end-to-end async pipeline", () => {
     const lastEvent = traceResponse.body.events.at(-1);
     expect(lastEvent.payload.citations).toHaveLength(1);
     expect(lastEvent.payload.citations[0].chunk_id).toBe("chunk-12");
+    expect(lastEvent.payload.answer_total_tokens).toBe(120);
+    expect(lastEvent.payload.total_cost_usd).toBe(0.0004);
 
     const invalidTransitions = traceResponse.body.transitions.filter(
       (transition: { valid: boolean }) => !transition.valid

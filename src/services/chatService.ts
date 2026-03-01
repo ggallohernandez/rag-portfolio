@@ -4,7 +4,9 @@ import { EventEmitterService } from "./eventEmitter.js";
 import { IRagStore, IRunStore } from "../store/interfaces.js";
 import { MessageRecord, RetrievalTrace } from "../domain/ragTypes.js";
 import { defaultStartPhase } from "../domain/stateMachine.js";
-import { AnswerGenerator, RetrievalEngine } from "./contracts.js";
+import type { AnswerGenerator, RetrievalEngine } from "./contracts.js";
+import { chatCostUsd, embeddingCostUsd } from "./costing.js";
+import { redactAndTruncateContext } from "./redaction.js";
 
 export type QueryResult = {
   runId: string;
@@ -20,10 +22,18 @@ export class ChatService {
     private readonly emitter: EventEmitterService,
     private readonly retrievalService: RetrievalEngine,
     private readonly answerService: AnswerGenerator,
-    private readonly memoryService: ChatMemoryService
+    private readonly memoryService: ChatMemoryService,
+    private readonly telemetryConfig: {
+      embeddingUsdPer1MTokens: number;
+      chatInputUsdPer1MTokens: number;
+      chatOutputUsdPer1MTokens: number;
+      contextMaxChars: number;
+      contextRedactionEnabled: boolean;
+    }
   ) {}
 
   async ask(projectId: string, chatId: string, content: string): Promise<QueryResult> {
+    const queryStartedAt = Date.now();
     const chat = await this.ragStore.getChat(chatId);
     if (!chat || chat.project_id !== projectId) {
       throw new Error(`chat '${chatId}' not found in project '${projectId}'`);
@@ -66,6 +76,12 @@ export class ChatService {
       }
     });
 
+    const retrieval = await this.retrievalService.retrieve(projectId, content);
+    const queryEmbeddingCostUsd = embeddingCostUsd(
+      retrieval.queryEmbedding.total_tokens,
+      this.telemetryConfig.embeddingUsdPer1MTokens
+    );
+
     await this.emitter.emit({
       run_id: runId,
       project_id: projectId,
@@ -74,11 +90,16 @@ export class ChatService {
       status: "in_progress",
       correlation_id: correlationId,
       payload: {
-        message_id: userMessage.id
+        message_id: userMessage.id,
+        embedding_model: retrieval.queryEmbedding.model,
+        embedding_provider: retrieval.queryEmbedding.provider,
+        embedding_dimensions: retrieval.queryEmbedding.dimensions,
+        embedding_prompt_tokens: retrieval.queryEmbedding.prompt_tokens,
+        embedding_total_tokens: retrieval.queryEmbedding.total_tokens,
+        embedding_cost_usd: queryEmbeddingCostUsd,
+        token_source: retrieval.queryEmbedding.token_source
       }
     });
-
-    const retrieval = await this.retrievalService.retrieve(projectId, content);
 
     await this.emitter.emit({
       run_id: runId,
@@ -117,6 +138,21 @@ export class ChatService {
     });
 
     const context = await this.memoryService.buildPromptContext(chatId);
+    const rawContext = [
+      context.summary ? `Summary:\n${context.summary}` : "",
+      context.recentMessages.length > 0
+        ? `Recent turns:\n${context.recentMessages
+            .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+            .join("\n")}`
+        : ""
+    ]
+      .filter(Boolean)
+      .join("\n\n")
+      .trim();
+    const redactedContext = redactAndTruncateContext(rawContext, {
+      maxChars: this.telemetryConfig.contextMaxChars,
+      enabled: this.telemetryConfig.contextRedactionEnabled
+    });
 
     await this.emitter.emit({
       run_id: runId,
@@ -127,7 +163,11 @@ export class ChatService {
       correlation_id: correlationId,
       payload: {
         summary_chars: context.summary.length,
-        recent_turns: context.recentMessages.length
+        recent_turns: context.recentMessages.length,
+        context_preview: redactedContext.preview,
+        context_full_redacted: redactedContext.full,
+        context_truncated: redactedContext.truncated,
+        context_redaction_applied: redactedContext.redactionApplied
       }
     });
 
@@ -141,7 +181,8 @@ export class ChatService {
       status: "in_progress",
       correlation_id: correlationId,
       payload: {
-        estimated_tokens: generated.token_usage_json.total_tokens
+        estimated_tokens: generated.token_usage_json.total_tokens,
+        answer_model: generated.model
       }
     });
 
@@ -165,7 +206,7 @@ export class ChatService {
       role: "assistant",
       content: generated.answer,
       citations_json: generated.citations,
-      model: "deterministic-rag",
+      model: generated.model,
       token_usage_json: generated.token_usage_json,
       created_at: new Date().toISOString(),
       retrieval_trace_id: trace.id
@@ -176,6 +217,18 @@ export class ChatService {
     await this.ragStore.addMessage(assistantMessage);
     await this.ragStore.saveTrace(trace);
 
+    const answerPromptTokens = toNumber(generated.token_usage_json.prompt_tokens);
+    const answerCompletionTokens = toNumber(generated.token_usage_json.completion_tokens);
+    const answerTotalTokens = toNumber(generated.token_usage_json.total_tokens);
+    const answerCostUsd = chatCostUsd(
+      answerPromptTokens,
+      answerCompletionTokens,
+      this.telemetryConfig.chatInputUsdPer1MTokens,
+      this.telemetryConfig.chatOutputUsdPer1MTokens
+    );
+    const totalCostUsd = Math.round((answerCostUsd + queryEmbeddingCostUsd) * 1_000_000) / 1_000_000;
+    const answerLatencyMs = Math.max(0, Date.now() - queryStartedAt);
+
     await this.emitter.emit({
       run_id: runId,
       project_id: projectId,
@@ -185,7 +238,16 @@ export class ChatService {
       correlation_id: correlationId,
       payload: {
         message_id: assistantMessage.id,
-        citations: generated.citations.length
+        citations: generated.citations.length,
+        answer_model: generated.model,
+        answer_prompt_tokens: answerPromptTokens,
+        answer_completion_tokens: answerCompletionTokens,
+        answer_total_tokens: answerTotalTokens,
+        answer_cost_usd: answerCostUsd,
+        query_embedding_tokens: retrieval.queryEmbedding.total_tokens,
+        query_embedding_cost_usd: queryEmbeddingCostUsd,
+        total_cost_usd: totalCostUsd,
+        answer_latency_ms: answerLatencyMs
       }
     });
 
@@ -198,4 +260,12 @@ export class ChatService {
       trace
     };
   }
+}
+
+function toNumber(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  return 0;
 }

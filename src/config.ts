@@ -32,6 +32,13 @@ export type AppConfig = {
     apiKey: string;
     chatModel: string;
     embeddingModel: string;
+    embeddingUsdPer1MTokens: number;
+    chatInputUsdPer1MTokens: number;
+    chatOutputUsdPer1MTokens: number;
+  };
+  pipeline: {
+    contextMaxChars: number;
+    contextRedactionEnabled: boolean;
   };
 };
 
@@ -70,7 +77,14 @@ export function loadConfig(): AppConfig {
     openai: {
       apiKey: process.env.OPENAI_API_KEY ?? "",
       chatModel: process.env.OPENAI_CHAT_MODEL ?? "gpt-4o-mini",
-      embeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small"
+      embeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small",
+      embeddingUsdPer1MTokens: toFloat(process.env.OPENAI_EMBEDDING_USD_PER_1M_TOKENS, 0, 0, 1_000),
+      chatInputUsdPer1MTokens: toFloat(process.env.OPENAI_CHAT_INPUT_USD_PER_1M_TOKENS, 0, 0, 1_000),
+      chatOutputUsdPer1MTokens: toFloat(process.env.OPENAI_CHAT_OUTPUT_USD_PER_1M_TOKENS, 0, 0, 1_000)
+    },
+    pipeline: {
+      contextMaxChars: toInt(process.env.PIPELINE_CONTEXT_MAX_CHARS, 4_000, 200, 100_000),
+      contextRedactionEnabled: toBool(process.env.PIPELINE_CONTEXT_REDACTION_ENABLED ?? "true")
     }
   };
 }
@@ -85,6 +99,15 @@ function toBool(value: string): boolean {
 
 function toInt(value: string | undefined, fallback: number, min: number, max: number): number {
   const parsed = Number.parseInt(value ?? "", 10);
+  if (Number.isNaN(parsed)) {
+    return fallback;
+  }
+
+  return Math.min(Math.max(parsed, min), max);
+}
+
+function toFloat(value: string | undefined, fallback: number, min: number, max: number): number {
+  const parsed = Number.parseFloat(value ?? "");
   if (Number.isNaN(parsed)) {
     return fallback;
   }

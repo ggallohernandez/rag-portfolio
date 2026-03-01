@@ -2,13 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CircleHelp, Loader2, Pencil, Plus, RefreshCw, SendHorizontal, Trash2, Upload } from "lucide-react";
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "../components/ui/chart";
 import { Input } from "../components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 import { Separator } from "../components/ui/separator";
 import { Textarea } from "../components/ui/textarea";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/ui/tooltip";
+import { buildHistogramLineData, formatBytes, formatPercent, formatUsd, safeText, toNumber } from "../lib/pipelinePopover";
 import { cn } from "../lib/utils";
 
 const INGESTION_PHASES = [
@@ -154,6 +157,186 @@ function buildPipelineState(events) {
   return next;
 }
 
+function buildPhaseEventMap(events) {
+  const phaseMap = {};
+  for (const event of events) {
+    phaseMap[event.phase] = event;
+  }
+  return phaseMap;
+}
+
+function MetricRow({ label, value }) {
+  return (
+    <p className="text-xs leading-relaxed text-slate-100">
+      <span className="font-semibold text-cyan-100">{label}:</span> {value}
+    </p>
+  );
+}
+
+function PipelinePhaseRunData({
+  phase,
+  payload,
+  documentsById,
+  isContextExpanded,
+  onToggleContext
+}) {
+  if (!payload || typeof payload !== "object") {
+    return <p className="text-xs text-muted-foreground">No runtime telemetry for this phase yet.</p>;
+  }
+
+  if (phase === "uploaded") {
+    const documentName =
+      safeText(payload.filename, "") ||
+      safeText(documentsById.get(payload.document_id)?.filename, "Not available.");
+    return (
+      <div className="space-y-1.5">
+        <MetricRow label="File" value={documentName} />
+        <MetricRow label="Mime Type" value={safeText(payload.mime_type)} />
+        <MetricRow label="File Size" value={formatBytes(payload.file_size_bytes)} />
+      </div>
+    );
+  }
+
+  if (phase === "parsed") {
+    return (
+      <div className="space-y-1.5">
+        <MetricRow label="Parser" value={safeText(payload.parser_kind)} />
+        <MetricRow label="Mime Type" value={safeText(payload.mime_type)} />
+        <MetricRow label="Parts" value={toNumber(payload.parts).toString()} />
+        <MetricRow label="Raw Chars" value={toNumber(payload.raw_char_count).toString()} />
+        <MetricRow label="Raw Tokens" value={toNumber(payload.raw_token_count).toString()} />
+      </div>
+    );
+  }
+
+  if (phase === "normalized") {
+    return (
+      <div className="space-y-1.5">
+        <MetricRow label="Normalized Chars" value={toNumber(payload.normalized_char_count).toString()} />
+        <MetricRow label="Normalized Tokens" value={toNumber(payload.normalized_token_count).toString()} />
+        <MetricRow label="Reduction" value={formatPercent(payload.reduction_pct)} />
+      </div>
+    );
+  }
+
+  if (phase === "chunked") {
+    const chartData = buildHistogramLineData(payload.histogram_bins);
+    return (
+      <div className="space-y-2.5">
+        <MetricRow label="Chunks" value={toNumber(payload.chunk_count).toString()} />
+        <MetricRow label="Token Range" value={`${toNumber(payload.token_min)} - ${toNumber(payload.token_max)}`} />
+        <MetricRow label="Average Tokens" value={toNumber(payload.token_avg).toFixed(2)} />
+        {chartData.length > 0 ? (
+          <div className="rounded-md border border-slate-700/70 bg-slate-900/50 p-2">
+            <p className="mb-1.5 text-[11px] text-cyan-100">Chunk Size Distribution</p>
+            <ChartContainer className="h-[120px]">
+              <LineChart data={chartData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.24)" />
+                <XAxis dataKey="range" tick={{ fill: "rgba(148,163,184,0.9)", fontSize: 10 }} interval="preserveStartEnd" />
+                <YAxis tick={{ fill: "rgba(148,163,184,0.9)", fontSize: 10 }} width={26} allowDecimals={false} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Line type="monotone" dataKey="count" stroke="rgba(34, 211, 238, 0.95)" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ChartContainer>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (phase === "embedded" || phase === "query_embedded") {
+    return (
+      <div className="space-y-1.5">
+        <MetricRow label="Model" value={safeText(payload.embedding_model)} />
+        <MetricRow label="Provider" value={safeText(payload.embedding_provider)} />
+        <MetricRow label="Dimensions" value={toNumber(payload.embedding_dimensions).toString()} />
+        <MetricRow label="Prompt Tokens" value={toNumber(payload.embedding_prompt_tokens).toString()} />
+        <MetricRow label="Total Tokens" value={toNumber(payload.embedding_total_tokens).toString()} />
+        <MetricRow label="Token Source" value={safeText(payload.token_source)} />
+        <MetricRow label="Cost (USD)" value={formatUsd(payload.embedding_cost_usd)} />
+      </div>
+    );
+  }
+
+  if (phase === "context_built") {
+    const preview = safeText(payload.context_preview);
+    const full = safeText(payload.context_full_redacted);
+    const hasToggle = full.length > 0 && full !== preview;
+    return (
+      <div className="space-y-2">
+        <MetricRow label="Summary Chars" value={toNumber(payload.summary_chars).toString()} />
+        <MetricRow label="Recent Turns" value={toNumber(payload.recent_turns).toString()} />
+        <MetricRow label="Truncated" value={payload.context_truncated ? "yes" : "no"} />
+        <MetricRow label="Redacted" value={payload.context_redaction_applied ? "yes" : "no"} />
+        <div className="rounded-md border border-slate-700/70 bg-slate-900/50 p-2">
+          <p className="mb-1 text-[11px] text-cyan-100">Context Preview</p>
+          <p className="whitespace-pre-wrap break-words text-xs text-slate-100">
+            {isContextExpanded ? full : preview}
+          </p>
+          {hasToggle ? (
+            <button
+              type="button"
+              className="mt-2 text-[11px] font-medium text-cyan-200 hover:text-cyan-100"
+              onClick={onToggleContext}
+            >
+              {isContextExpanded ? "Hide full context" : "Show full context"}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === "completed") {
+    const summary = payload.summary && typeof payload.summary === "object" ? payload.summary : {};
+    return (
+      <div className="space-y-1.5">
+        <MetricRow label="File" value={safeText(summary.filename)} />
+        <MetricRow label="Mime Type" value={safeText(summary.mime_type)} />
+        <MetricRow label="File Size" value={formatBytes(summary.file_size_bytes)} />
+        <MetricRow label="Parts" value={toNumber(summary.parts).toString()} />
+        <MetricRow label="Chunks" value={toNumber(summary.chunk_count).toString()} />
+        <MetricRow label="Embedding Model" value={safeText(summary.embedding_model)} />
+        <MetricRow label="Embedding Tokens" value={toNumber(summary.embedding_total_tokens).toString()} />
+        <MetricRow label="Embedding Cost (USD)" value={formatUsd(summary.embedding_cost_usd)} />
+        <MetricRow label="Duration" value={`${toNumber(summary.duration_ms)} ms`} />
+      </div>
+    );
+  }
+
+  if (phase === "answered") {
+    return (
+      <div className="space-y-1.5">
+        <MetricRow label="Model" value={safeText(payload.answer_model)} />
+        <MetricRow label="Prompt Tokens" value={toNumber(payload.answer_prompt_tokens).toString()} />
+        <MetricRow label="Completion Tokens" value={toNumber(payload.answer_completion_tokens).toString()} />
+        <MetricRow label="Answer Tokens" value={toNumber(payload.answer_total_tokens).toString()} />
+        <MetricRow label="Query Embedding Tokens" value={toNumber(payload.query_embedding_tokens).toString()} />
+        <MetricRow label="Answer Cost (USD)" value={formatUsd(payload.answer_cost_usd)} />
+        <MetricRow label="Query Embedding Cost (USD)" value={formatUsd(payload.query_embedding_cost_usd)} />
+        <MetricRow label="Total Cost (USD)" value={formatUsd(payload.total_cost_usd)} />
+        <MetricRow label="Answer Time" value={`${toNumber(payload.answer_latency_ms)} ms`} />
+      </div>
+    );
+  }
+
+  if (phase === "query_received" || phase === "retrieved_vector" || phase === "retrieved_bm25" || phase === "reranked" || phase === "answer_streaming" || phase === "indexed" || phase === "ocr") {
+    return (
+      <div className="space-y-1.5">
+        {Object.entries(payload).map(([key, value]) => (
+          <MetricRow
+            key={key}
+            label={key.replaceAll("_", " ")}
+            value={typeof value === "number" ? value.toString() : safeText(value)}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return <p className="text-xs text-muted-foreground">No runtime telemetry mapped for this phase.</p>;
+}
+
 function getErrorMessage(error) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -204,6 +387,15 @@ function formatCitationLabel(citation, documentsById) {
   return `${filename}:${formatReference(citation.location)}`;
 }
 
+function formatCitationPreview(citation) {
+  if (typeof citation.preview !== "string") {
+    return "No citation preview available.";
+  }
+
+  const trimmed = citation.preview.trim();
+  return trimmed.length > 0 ? trimmed : "No citation preview available.";
+}
+
 function normalizeBasePath(value) {
   const trimmed = value.trim();
   if (!trimmed || trimmed === "/") {
@@ -236,11 +428,13 @@ export default function HomePage() {
   const [selectedChatId, setSelectedChatId] = useState(null);
   const [composer, setComposer] = useState("");
   const [pipeline, setPipeline] = useState(() => createPendingPipeline());
+  const [phaseEvents, setPhaseEvents] = useState({});
   const [activeRunId, setActiveRunId] = useState(null);
   const [isSending, setIsSending] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [expandedContextPhases, setExpandedContextPhases] = useState({});
 
   const eventSourceRef = useRef(null);
   const runEventsRef = useRef(new Map());
@@ -262,6 +456,8 @@ export default function HomePage() {
   const resetPipeline = useCallback(() => {
     runEventsRef.current.clear();
     setPipeline(createPendingPipeline());
+    setPhaseEvents({});
+    setExpandedContextPhases({});
   }, []);
 
   useEffect(() => {
@@ -327,6 +523,7 @@ export default function HomePage() {
           runEventsRef.current.set(payload.seq, payload);
           const ordered = [...runEventsRef.current.values()].sort((a, b) => a.seq - b.seq);
           setPipeline(buildPipelineState(ordered));
+          setPhaseEvents(buildPhaseEventMap(ordered));
         } catch {
           // Keep stream alive on malformed event payloads.
         }
@@ -979,11 +1176,36 @@ export default function HomePage() {
                           )}
                         >
                           <p className="whitespace-pre-wrap">{message.content || ""}</p>
-                          {!isUser && Array.isArray(message.citations_json) && message.citations_json.length > 0 ? (
-                            <p className="mt-3 border-t border-slate-700/80 pt-2 font-mono text-[11px] text-cyan-200/80">
-                              {message.citations_json.map((citation) => formatCitationLabel(citation, documentsById)).join(" • ")}
-                            </p>
-                          ) : null}
+                      {!isUser && Array.isArray(message.citations_json) && message.citations_json.length > 0 ? (
+                        <div className="mt-3 border-t border-slate-700/80 pt-2">
+                          <div className="flex flex-wrap gap-2">
+                            {message.citations_json.map((citation, index) => {
+                              const label = formatCitationLabel(citation, documentsById);
+                              const preview = formatCitationPreview(citation);
+                              return (
+                                <Popover key={`${citation.chunk_id ?? citation.document_id}-${index}`}>
+                                  <PopoverTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className="rounded-md border border-cyan-400/35 bg-cyan-500/10 px-2.5 py-1 font-mono text-[11px] text-cyan-200 transition-colors hover:bg-cyan-500/20"
+                                    >
+                                      {`[#${index + 1}] ${label}`}
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent
+                                    side="top"
+                                    align="start"
+                                    className="w-[min(520px,85vw)] space-y-2 border-slate-700 bg-slate-950"
+                                  >
+                                    <p className="font-mono text-[11px] text-cyan-200">{label}</p>
+                                    <p className="whitespace-pre-wrap text-xs leading-relaxed text-slate-100">{preview}</p>
+                                  </PopoverContent>
+                                </Popover>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : null}
                         </article>
                       );
                     })
@@ -1020,30 +1242,37 @@ export default function HomePage() {
             <CardTitle className="text-sm uppercase tracking-[0.2em] text-cyan-200/80">Pipeline</CardTitle>
           </CardHeader>
           <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
-            <TooltipProvider delayDuration={160}>
-              <div className="scroll-thin min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-                {ALL_PHASES.map((phase) => {
-                  const status = pipeline[phase] || "pending";
-                  const detail = PHASE_DETAILS[phase] ?? {
-                    what: "Phase executed as part of the run lifecycle.",
-                    how: "Emitted as an event in the run log and projected into UI state.",
-                    why: "Keeps the pipeline observable and debuggable end-to-end."
-                  };
+            <div className="scroll-thin min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+              {ALL_PHASES.map((phase) => {
+                const status = pipeline[phase] || "pending";
+                const detail = PHASE_DETAILS[phase] ?? {
+                  what: "Phase executed as part of the run lifecycle.",
+                  how: "Emitted as an event in the run log and projected into UI state.",
+                  why: "Keeps the pipeline observable and debuggable end-to-end."
+                };
+                const phaseEvent = phaseEvents[phase];
+                const payload = phaseEvent?.payload;
+                const isContextExpanded = Boolean(expandedContextPhases[phase]);
 
-                  return (
-                    <Tooltip key={phase}>
-                      <TooltipTrigger asChild>
-                        <div className={cn("rounded-lg border px-3 py-2 text-sm", getPipelineTone(status))}>
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <p className="font-mono text-xs uppercase tracking-wide">{phase}</p>
-                              <p className="text-xs">{status}</p>
-                            </div>
-                            <CircleHelp className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-85" />
+                return (
+                  <Popover key={phase}>
+                    <PopoverTrigger asChild>
+                      <button type="button" className={cn("w-full rounded-lg border px-3 py-2 text-left text-sm", getPipelineTone(status))}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="font-mono text-xs uppercase tracking-wide">{phase}</p>
+                            <p className="text-xs">{status}</p>
                           </div>
+                          <CircleHelp className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-85" />
                         </div>
-                      </TooltipTrigger>
-                      <TooltipContent side="left" align="start" className="max-w-[340px] space-y-1.5">
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      side="left"
+                      align="start"
+                      className="w-[min(520px,90vw)] max-h-[70vh] space-y-3 overflow-y-auto border-slate-700 bg-slate-950"
+                    >
+                      <div className="space-y-1.5">
                         <p className="font-mono text-[11px] uppercase tracking-wide text-cyan-200">{phase}</p>
                         <p className="leading-relaxed text-slate-100">
                           <span className="font-semibold text-cyan-100">What:</span> {detail.what}
@@ -1054,12 +1283,28 @@ export default function HomePage() {
                         <p className="leading-relaxed text-slate-100">
                           <span className="font-semibold text-cyan-100">Why:</span> {detail.why}
                         </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  );
-                })}
-              </div>
-            </TooltipProvider>
+                      </div>
+                      <Separator />
+                      <div className="space-y-1">
+                        <p className="font-mono text-[11px] uppercase tracking-wide text-cyan-200">Run Data</p>
+                        <PipelinePhaseRunData
+                          phase={phase}
+                          payload={payload}
+                          documentsById={documentsById}
+                          isContextExpanded={isContextExpanded}
+                          onToggleContext={() =>
+                            setExpandedContextPhases((previous) => ({
+                              ...previous,
+                              [phase]: !previous[phase]
+                            }))
+                          }
+                        />
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                );
+              })}
+            </div>
 
             <Separator className="shrink-0" />
 

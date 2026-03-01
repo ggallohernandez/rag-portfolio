@@ -6,6 +6,7 @@ import { DocumentPart } from "../domain/ragTypes.js";
 export type ParsedDocument = {
   parts: DocumentPart[];
   ocr_status: "completed" | "skipped";
+  parser_kind: "pdf" | "markdown" | "csv" | "xlsx" | "text";
 };
 
 export async function parseDocument(
@@ -68,7 +69,8 @@ async function parsePdf(documentId: string, body: Buffer): Promise<ParsedDocumen
 
     return {
       parts,
-      ocr_status: "skipped"
+      ocr_status: "skipped",
+      parser_kind: "pdf"
     };
   } catch {
     return {
@@ -81,7 +83,8 @@ async function parsePdf(documentId: string, body: Buffer): Promise<ParsedDocumen
           metadata_json: { parser: "pdf-parse", failed: true }
         }
       ],
-      ocr_status: "skipped"
+      ocr_status: "skipped",
+      parser_kind: "pdf"
     };
   }
 }
@@ -168,7 +171,8 @@ function parseXlsx(documentId: string, body: Buffer): ParsedDocument {
 
   return {
     parts,
-    ocr_status: "skipped"
+    ocr_status: "skipped",
+    parser_kind: "xlsx"
   };
 }
 
@@ -186,7 +190,8 @@ function parseCsv(documentId: string, body: Buffer): ParsedDocument {
         metadata_json: { parser: "csv", rows: lines.length }
       }
     ],
-    ocr_status: "skipped"
+    ocr_status: "skipped",
+    parser_kind: "csv"
   };
 }
 
@@ -206,7 +211,8 @@ function parseMarkdown(documentId: string, body: Buffer): ParsedDocument {
       raw_text: section,
       metadata_json: { parser: "markdown" }
     })),
-    ocr_status: "skipped"
+    ocr_status: "skipped",
+    parser_kind: "markdown"
   };
 }
 
@@ -221,6 +227,7 @@ function parseText(documentId: string, body: Buffer): ParsedDocument {
         metadata_json: { parser: "text" }
       }
     ],
-    ocr_status: "skipped"
+    ocr_status: "skipped",
+    parser_kind: "text"
   };
 }
